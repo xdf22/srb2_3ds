@@ -58,7 +58,7 @@ typedef off_t off64_t;
 #endif
 #endif
 
-#if defined(__MINGW32__) && ((__GNUC__ > 7) || (__GNUC__ == 6 && __GNUC_MINOR__ >= 3))
+#if defined(__MINGW32__) && ((__GNUC__ > 7) || (__GNUC__ == 6 && __GNUC_MINOR__ >= 3)) && (__GNUC__ < 8)
 #define PRIdS "u"
 #elif defined (_WIN32)
 #define PRIdS "Iu"
@@ -1032,7 +1032,7 @@ static boolean M_SetupaPNG(png_const_charp filename, png_bytep pal)
 static inline moviemode_t M_StartMovieAPNG(const char *pathname)
 {
 #ifdef USE_APNG
-	UINT8 *palette;
+	UINT8 *palette = NULL;
 	const char *freename = NULL;
 	boolean ret = false;
 
@@ -1048,8 +1048,13 @@ static inline moviemode_t M_StartMovieAPNG(const char *pathname)
 		return MM_OFF;
 	}
 
-	if (rendermode == render_soft) M_CreateScreenShotPalette();
-	ret = M_SetupaPNG(va(pandf,pathname,freename), (palette = screenshot_palette));
+	if (rendermode == render_soft)
+	{
+		M_CreateScreenShotPalette();
+		palette = screenshot_palette;
+	}
+
+	ret = M_SetupaPNG(va(pandf,pathname,freename), palette);
 
 	if (!ret)
 	{
