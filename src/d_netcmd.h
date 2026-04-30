@@ -113,6 +113,8 @@ extern consvar_t cv_sleep;
 
 extern consvar_t cv_freedemocamera;
 
+extern consvar_t cv_netcompat;
+
 typedef enum
 {
 	XD_NAMEANDCOLOR = 1,

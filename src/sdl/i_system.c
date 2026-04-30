@@ -79,6 +79,7 @@ typedef LPVOID (WINAPI *p_MapViewOfFile) (HANDLE, DWORD, DWORD, DWORD, SIZE_T);
 #define HAVE_SDLCPUINFO
 
 #if defined (__unix__) || defined(__APPLE__) || (defined (UNIXCOMMON) && !defined (__HAIKU__))
+#include <time.h>
 #if defined (__linux__)
 #include <sys/vfs.h>
 #else
@@ -1481,7 +1482,7 @@ const char *I_GetJoyName(INT32 joyindex)
 		{
 			tempname = SDL_JoystickNameForIndex(joyindex);
 			if (tempname)
-				strncpy(joyname, tempname, 254);
+				strncpy(joyname, tempname, sizeof(joyname)-1);
 		}
 		SDL_QuitSubSystem(SDL_INIT_JOYSTICK);
 	}
@@ -1953,6 +1954,19 @@ void I_StartupMouse2(void)
 #endif
 }
 
+void I_SetTextInputMode(boolean active)
+{
+	if (active)
+		SDL_StartTextInput();
+	else
+		SDL_StopTextInput();
+}
+
+boolean I_GetTextInputMode(void)
+{
+	return SDL_IsTextInputActive();
+}
+
 //
 // I_Tactile
 //
@@ -1993,6 +2007,11 @@ static HMODULE winmm = NULL;
 static DWORD starttickcount = 0; // hack for win2k time bug
 static p_timeGetTime pfntimeGetTime = NULL;
 
+static LARGE_INTEGER basetime = {{0, 0}};
+
+// use this if High Resolution timer is found
+static LARGE_INTEGER frequency;
+
 // ---------
 // I_GetTime
 // Use the High Resolution Timer if available,
@@ -2007,10 +2026,6 @@ tic_t I_GetTime(void)
 	if (!starttickcount) // high precision timer
 	{
 		LARGE_INTEGER currtime; // use only LowPart if high resolution counter is not available
-		static LARGE_INTEGER basetime = {{0, 0}};
-
-		// use this if High Resolution timer is found
-		static LARGE_INTEGER frequency;
 
 		if (!basetime.LowPart)
 		{
@@ -2039,6 +2054,38 @@ tic_t I_GetTime(void)
 	return newtics;
 }
 
+void I_SleepToTic(tic_t tic)
+{
+	tic_t untilnexttic = 0;
+
+	if (!starttickcount) // high precision timer
+	{
+		LARGE_INTEGER currtime; // use only LowPart if high resolution counter is not available
+		if (frequency.LowPart && QueryPerformanceCounter(&currtime))
+		{
+			untilnexttic = (INT32)((currtime.QuadPart - basetime.QuadPart) * 1000
+				/ frequency.QuadPart % NEWTICRATE);
+		}
+		else if (pfntimeGetTime)
+		{
+			currtime.LowPart = pfntimeGetTime();
+			if (!basetime.LowPart)
+				basetime.LowPart = currtime.LowPart;
+			untilnexttic = ((currtime.LowPart - basetime.LowPart)%(1000/NEWTICRATE));
+		}
+	}
+	else
+	{
+		untilnexttic = (GetTickCount() - starttickcount)%(1000/NEWTICRATE);
+		untilnexttic = (1000/NEWTICRATE) - untilnexttic;
+	}
+
+	// give some extra slack then busy-wait on windows, since windows' sleep is garbage
+	if (untilnexttic > 2)
+		SDL_Delay(untilnexttic - 2);
+	while (tic > I_GetTime());
+}
+
 static void I_ShutdownTimer(void)
 {
 	pfntimeGetTime = NULL;
@@ -2052,25 +2099,59 @@ static void I_ShutdownTimer(void)
 	}
 }
 #else
+static struct timespec basetime;
+
 //
 // I_GetTime
 // returns time in 1/TICRATE second tics
 //
 tic_t I_GetTime (void)
 {
-	static Uint64 basetime = 0;
-		   Uint64 ticks = SDL_GetTicks();
+	struct timespec ts;
+	uint64_t ticks;
+	clock_gettime(CLOCK_MONOTONIC, &ts);
 
-	if (!basetime)
-		basetime = ticks;
+	if (basetime.tv_sec == 0)
+		basetime = ts;
 
-	ticks -= basetime;
-
-	ticks = (ticks*TICRATE);
-
-	ticks = (ticks/1000);
+	ts.tv_sec -= basetime.tv_sec;
+	ts.tv_nsec -= basetime.tv_nsec;
+	if (ts.tv_nsec < 0)
+	{
+		ts.tv_sec--;
+		ts.tv_nsec += 1000000000;
+	}
+	ticks = ((uint64_t)ts.tv_sec * 1000000000) + ts.tv_nsec;
+	ticks = ticks * TICRATE / 1000000000;
 
 	return (tic_t)ticks;
+}
+
+void I_SleepToTic(tic_t tic)
+{
+	struct timespec ts;
+	uint64_t curtime, targettime;
+	int status;
+	clock_gettime(CLOCK_MONOTONIC, &ts);
+
+	ts.tv_sec -= basetime.tv_sec;
+	ts.tv_nsec -= basetime.tv_nsec;
+	if (ts.tv_nsec < 0)
+	{
+		ts.tv_sec--;
+		ts.tv_nsec += 1000000000;
+	}
+	curtime = ((uint64_t)ts.tv_sec * 1000000000) + ts.tv_nsec;
+	targettime = ((uint64_t)tic * 1000000000) / TICRATE;
+	if (targettime < curtime)
+		return;
+
+	ts.tv_sec = (targettime - curtime) / 1000000000;
+	ts.tv_nsec = (targettime - curtime) % 1000000000;
+
+	do status = nanosleep(&ts, &ts);
+	while (status == EINTR);
+	I_Assert(status == 0);
 }
 #endif
 
@@ -2882,69 +2963,6 @@ size_t I_GetFreeMem(size_t *total)
 	if (total)
 		*total = 48<<20;
 	return 48<<20;
-#endif
-}
-
-const CPUInfoFlags *I_CPUInfo(void)
-{
-#if defined (_WIN32)
-	static CPUInfoFlags WIN_CPUInfo;
-	SYSTEM_INFO SI;
-	p_IsProcessorFeaturePresent pfnCPUID = (p_IsProcessorFeaturePresent)(LPVOID)GetProcAddress(GetModuleHandleA("kernel32.dll"), "IsProcessorFeaturePresent");
-
-	ZeroMemory(&WIN_CPUInfo,sizeof (WIN_CPUInfo));
-	if (pfnCPUID)
-	{
-		WIN_CPUInfo.FPPE       = pfnCPUID( 0); //PF_FLOATING_POINT_PRECISION_ERRATA
-		WIN_CPUInfo.FPE        = pfnCPUID( 1); //PF_FLOATING_POINT_EMULATED
-		WIN_CPUInfo.cmpxchg    = pfnCPUID( 2); //PF_COMPARE_EXCHANGE_DOUBLE
-		WIN_CPUInfo.MMX        = pfnCPUID( 3); //PF_MMX_INSTRUCTIONS_AVAILABLE
-		WIN_CPUInfo.PPCMM64    = pfnCPUID( 4); //PF_PPC_MOVEMEM_64BIT_OK
-		WIN_CPUInfo.ALPHAbyte  = pfnCPUID( 5); //PF_ALPHA_BYTE_INSTRUCTIONS
-		WIN_CPUInfo.SSE        = pfnCPUID( 6); //PF_XMMI_INSTRUCTIONS_AVAILABLE
-		WIN_CPUInfo.AMD3DNow   = pfnCPUID( 7); //PF_3DNOW_INSTRUCTIONS_AVAILABLE
-		WIN_CPUInfo.RDTSC      = pfnCPUID( 8); //PF_RDTSC_INSTRUCTION_AVAILABLE
-		WIN_CPUInfo.PAE        = pfnCPUID( 9); //PF_PAE_ENABLED
-		WIN_CPUInfo.SSE2       = pfnCPUID(10); //PF_XMMI64_INSTRUCTIONS_AVAILABLE
-		//WIN_CPUInfo.blank    = pfnCPUID(11); //PF_SSE_DAZ_MODE_AVAILABLE
-		WIN_CPUInfo.DEP        = pfnCPUID(12); //PF_NX_ENABLED
-		WIN_CPUInfo.SSE3       = pfnCPUID(13); //PF_SSE3_INSTRUCTIONS_AVAILABLE
-		WIN_CPUInfo.cmpxchg16b = pfnCPUID(14); //PF_COMPARE_EXCHANGE128
-		WIN_CPUInfo.cmp8xchg16 = pfnCPUID(15); //PF_COMPARE64_EXCHANGE128
-		WIN_CPUInfo.PFC        = pfnCPUID(16); //PF_CHANNELS_ENABLED
-	}
-#ifdef HAVE_SDLCPUINFO
-	else
-	{
-		WIN_CPUInfo.RDTSC       = SDL_HasRDTSC();
-		WIN_CPUInfo.MMX         = SDL_HasMMX();
-		WIN_CPUInfo.AMD3DNow    = SDL_Has3DNow();
-		WIN_CPUInfo.SSE         = SDL_HasSSE();
-		WIN_CPUInfo.SSE2        = SDL_HasSSE2();
-		WIN_CPUInfo.AltiVec     = SDL_HasAltiVec();
-	}
-	WIN_CPUInfo.MMXExt      = SDL_FALSE; //SDL_HasMMXExt(); No longer in SDL2
-	WIN_CPUInfo.AMD3DNowExt = SDL_FALSE; //SDL_Has3DNowExt(); No longer in SDL2
-#endif
-	GetSystemInfo(&SI);
-	WIN_CPUInfo.CPUs = SI.dwNumberOfProcessors;
-	WIN_CPUInfo.IA64 = (SI.dwProcessorType == 2200); // PROCESSOR_INTEL_IA64
-	WIN_CPUInfo.AMD64 = (SI.dwProcessorType == 8664); // PROCESSOR_AMD_X8664
-	return &WIN_CPUInfo;
-#elif defined (HAVE_SDLCPUINFO)
-	static CPUInfoFlags SDL_CPUInfo;
-	memset(&SDL_CPUInfo,0,sizeof (CPUInfoFlags));
-	SDL_CPUInfo.RDTSC       = SDL_HasRDTSC();
-	SDL_CPUInfo.MMX         = SDL_HasMMX();
-	SDL_CPUInfo.MMXExt      = SDL_FALSE; //SDL_HasMMXExt(); No longer in SDL2
-	SDL_CPUInfo.AMD3DNow    = SDL_Has3DNow();
-	SDL_CPUInfo.AMD3DNowExt = SDL_FALSE; //SDL_Has3DNowExt(); No longer in SDL2
-	SDL_CPUInfo.SSE         = SDL_HasSSE();
-	SDL_CPUInfo.SSE2        = SDL_HasSSE2();
-	SDL_CPUInfo.AltiVec     = SDL_HasAltiVec();
-	return &SDL_CPUInfo;
-#else
-	return NULL; /// \todo CPUID asm
 #endif
 }
 

@@ -160,7 +160,6 @@ CFILES		:=	i_main.o \
 				mserv.o    \
 				i_tcp.o    \
 				lzf.o	     \
-				vid_copy.o \
 				b_bot.o \
 				i_cdmus.o    \
 				i_net.o      \

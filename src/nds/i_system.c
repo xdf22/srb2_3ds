@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <errno.h>
 //#include <3ds.h>
 //#include <citro3d.h>
 
@@ -39,6 +40,35 @@ size_t I_GetFreeMem(size_t *total)
 	*total = 128 * 1024 * 1024;
 	
 	return linearSpaceFree() + vramSpaceFree();
+}
+
+static struct timespec basetime;
+
+void I_SleepToTic(tic_t tic)
+{
+	struct timespec ts;
+	uint64_t curtime, targettime;
+	int status;
+	clock_gettime(CLOCK_MONOTONIC, &ts);
+
+	ts.tv_sec -= basetime.tv_sec;
+	ts.tv_nsec -= basetime.tv_nsec;
+	if (ts.tv_nsec < 0)
+	{
+		ts.tv_sec--;
+		ts.tv_nsec += 1000000000;
+	}
+	curtime = ((uint64_t)ts.tv_sec * 1000000000) + ts.tv_nsec;
+	targettime = ((uint64_t)tic * 1000000000) / TICRATE;
+	if (targettime < curtime)
+		return;
+
+	ts.tv_sec = (targettime - curtime) / 1000000000;
+	ts.tv_nsec = (targettime - curtime) % 1000000000;
+
+	do status = nanosleep(&ts, &ts);
+	while (status == EINTR);
+	I_Assert(status == 0);
 }
 
 void I_StartupTimer(void)
@@ -483,11 +513,6 @@ INT32 I_mkdir(const char *dirname, INT32 unixright)
 	return 0;
 }
 
-const CPUInfoFlags *I_CPUInfo(void)
-{
-	return NULL;
-}
-
 const char *I_LocateWad(void)
 {
 	if (wadAtExePath)
@@ -505,6 +530,11 @@ void I_GetJoystick2Events(void){}
 void I_GetMouseEvents(void){}
 
 void I_UpdateMouseGrab(void){}
+
+void I_SetTextInputMode(boolean active)
+{
+	(void)active;
+}
 
 char *I_GetEnv(const char *name)
 {

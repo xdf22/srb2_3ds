@@ -21,6 +21,7 @@
 #include "i_system.h"
 #include "i_video.h"
 #include "d_net.h"
+#include "d_netcmd.h"
 #include "d_main.h"
 #include "g_game.h"
 #include "hu_stuff.h"

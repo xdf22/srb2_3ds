@@ -134,11 +134,6 @@ INT32 I_mkdir(const char *dirname, INT32 unixright)
 	return -1;
 }
 
-const CPUInfoFlags *I_CPUInfo(void)
-{
-	return NULL;
-}
-
 const char *I_LocateWad(void)
 {
 	return NULL;
@@ -151,6 +146,16 @@ void I_GetJoystick2Events(void){}
 void I_GetMouseEvents(void){}
 
 void I_UpdateMouseGrab(void){}
+
+void I_SetTextInputMode(boolean active)
+{
+	(void)active;
+}
+
+boolean I_GetTextInputMode(void)
+{
+	return false;
+}
 
 char *I_GetEnv(const char *name)
 {

@@ -26,6 +26,8 @@
 #include <unistd.h>
 #endif
 
+#include "time.h" // For log timestamps
+
 #ifdef HAVE_SDL
 
 #ifdef HAVE_TTF
@@ -62,40 +64,6 @@ FILE *logstream = NULL;
 typedef BOOL (WINAPI *p_IsDebuggerPresent)(VOID);
 #endif
 
-#if defined (_WIN32)
-static inline VOID MakeCodeWritable(VOID)
-{
-#ifdef USEASM // Disable write-protection of code segment
-	DWORD OldRights;
-	const DWORD NewRights = PAGE_EXECUTE_READWRITE;
-	PBYTE pBaseOfImage = (PBYTE)GetModuleHandle(NULL);
-	PIMAGE_DOS_HEADER dosH =(PIMAGE_DOS_HEADER)pBaseOfImage;
-	PIMAGE_NT_HEADERS ntH = (PIMAGE_NT_HEADERS)(pBaseOfImage + dosH->e_lfanew);
-	PIMAGE_OPTIONAL_HEADER oH = (PIMAGE_OPTIONAL_HEADER)
-		((PBYTE)ntH + sizeof (IMAGE_NT_SIGNATURE) + sizeof (IMAGE_FILE_HEADER));
-	LPVOID pA = pBaseOfImage+oH->BaseOfCode;
-	SIZE_T pS = oH->SizeOfCode;
-#if 1 // try to find the text section
-	PIMAGE_SECTION_HEADER ntS = IMAGE_FIRST_SECTION (ntH);
-	WORD s;
-	for (s = 0; s < ntH->FileHeader.NumberOfSections; s++)
-	{
-		if (memcmp (ntS[s].Name, ".text\0\0", 8) == 0)
-		{
-			pA = pBaseOfImage+ntS[s].VirtualAddress;
-			pS = ntS[s].Misc.VirtualSize;
-			break;
-		}
-	}
-#endif
-
-	if (!VirtualProtect(pA,pS,NewRights,&OldRights))
-		I_Error("Could not make code writable\n");
-#endif
-}
-#endif
-
-
 /**	\brief	The main function
 
 	\param	argc	number of arg
@@ -114,8 +82,12 @@ int main(int argc, char **argv)
 #endif
 {
 	const char *logdir = NULL;
+	char logfile[MAX_WADPATH];
 	myargc = argc;
 	myargv = argv; /// \todo pull out path to exe from this string
+
+	// disable text input right off the bat, since we don't need it at the start.
+	I_SetTextInputMode(false);
 
 #ifdef HAVE_TTF
 #ifdef _WIN32
@@ -125,17 +97,35 @@ int main(int argc, char **argv)
 #endif
 #endif
 
-	logdir = D_Home();
+
 
 #ifdef LOGMESSAGES
+	if (!M_CheckParm("-nolog"))
+	{
+		logdir = D_Home();
+		time_t my_time;
+		struct tm * timeinfo;
+		char buf[26];
+		my_time = time(NULL);
+		timeinfo = localtime(&my_time);
+		strftime(buf, 26, "%Y-%m-%d %H-%M-%S", timeinfo);
+		strcpy(logfile, va("log-%s.txt", buf));
 #ifdef DEFAULTDIR
-	if (logdir)
-		logstream = fopen(va("%s/"DEFAULTDIR"/log.txt",logdir), "wt");
-	else
+		if (logdir)
+		{
+			// Create dirs here because D_SRB2Main() is too late.
+			I_mkdir(va("%s%s"DEFAULTDIR, logdir, PATHSEP), 0755);
+			I_mkdir(va("%s%s"DEFAULTDIR"%slogs",logdir, PATHSEP, PATHSEP), 0755);
+			logstream = fopen(va("%s%s"DEFAULTDIR"%slogs%s%s",logdir, PATHSEP, PATHSEP, PATHSEP, logfile), "wt");
+		}
+		else
 #endif
-		logstream = fopen("./log.txt", "wt");
+		{
+			I_mkdir("."PATHSEP"logs"PATHSEP, 0755);
+			logstream = fopen(va("."PATHSEP"logs"PATHSEP"%s", logfile), "wt");
+		}
 #endif
-
+	}
 	//I_OutputMsg("I_StartupSystem() ...\n");
 	I_StartupSystem();
 #if defined (_WIN32)
@@ -155,12 +145,12 @@ int main(int argc, char **argv)
 #ifndef __MINGW32__
 	prevExceptionFilter = SetUnhandledExceptionFilter(RecordExceptionInfo);
 #endif
-	MakeCodeWritable();
 #endif
 	// startup SRB2
 	CONS_Printf("Setting up SRB2...\n");
 	D_SRB2Main();
 	CONS_Printf("Entering main game loop...\n");
+	CONS_Printf("%s\n", logfile);
 	// never return
 	D_SRB2Loop();
 
