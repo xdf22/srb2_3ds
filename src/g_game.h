@@ -37,10 +37,12 @@ extern boolean playeringame[MAXPLAYERS];
 
 // demoplaying back and demo recording
 extern boolean demoplayback, titledemo, demorecording, timingdemo;
+extern tic_t demostarttime;
 
 // Quit after playing a demo from cmdline.
 extern boolean singledemo;
 extern boolean demo_start;
+extern boolean demosynced;
 extern UINT16 demoversion;
 
 extern mobj_t *metalplayback;

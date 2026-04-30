@@ -16,6 +16,7 @@
 
 #include "console.h"
 #include "command.h"
+#include "i_time.h"
 #include "i_system.h"
 #include "g_game.h"
 #include "hu_stuff.h"
@@ -158,9 +159,7 @@ static void Command_Isgamemodified_f(void);
 static void Command_Cheats_f(void);
 #ifdef _DEBUG
 static void Command_Togglemodified_f(void);
-#ifdef HAVE_BLUA
 static void Command_Archivetest_f(void);
-#endif
 #endif
 
 // =========================================================================
@@ -191,7 +190,7 @@ static CV_PossibleValue_t autobalance_cons_t[] = {{0, "MIN"}, {4, "MAX"}, {0, NU
 static CV_PossibleValue_t teamscramble_cons_t[] = {{0, "Off"}, {1, "Random"}, {2, "Points"}, {0, NULL}};
 
 static CV_PossibleValue_t startingliveslimit_cons_t[] = {{1, "MIN"}, {99, "MAX"}, {0, NULL}};
-static CV_PossibleValue_t sleeping_cons_t[] = {{-1, "MIN"}, {1000/TICRATE, "MAX"}, {0, NULL}};
+static CV_PossibleValue_t sleeping_cons_t[] = {{0, "MIN"}, {1000/TICRATE, "MAX"}, {0, NULL}};
 static CV_PossibleValue_t competitionboxes_cons_t[] = {{0, "Normal"}, {1, "Random"}, {2, "Teleports"},
 	{3, "None"}, {0, NULL}};
 
@@ -205,6 +204,8 @@ static CV_PossibleValue_t pause_cons_t[] = {{0, "Server"}, {1, "All"}, {0, NULL}
 static CV_PossibleValue_t timetic_cons_t[] = {{0, "Normal"}, {1, "Centiseconds"}, {2, "Mania"}, {3, "Tics"}, {0, NULL}};
 //Using "Normal" instead of 2.2's "Classic" in order to be compatible with people's existing configurations.
 
+consvar_t cv_showinput = {"showinput", "Off", CV_SAVE, CV_OnOff, NULL, 0, NULL, NULL, 0, 0, NULL};
+consvar_t cv_showinputjoy = {"showinputjoy", "Off", 0, CV_OnOff, NULL, 0, NULL, NULL, 0, 0, NULL};
 static CV_PossibleValue_t  scorepos_cons_t[] = {{0, "Normal"}, {1, "Modern"}, {0, NULL}};
 
 #ifdef NETGAME_DEVMODE
@@ -352,6 +353,10 @@ consvar_t cv_jointimeout = {"jointimeout", "350", CV_CALL|CV_SAVE, jointimeout_c
 #ifdef NEWPING
 consvar_t cv_maxping = {"maxping", "0", CV_SAVE, CV_Unsigned, NULL, 0, NULL, NULL, 0, 0, NULL};
 #endif
+
+// show your ping on the HUD next to framerate
+consvar_t cv_showping = {"showping", "Off", CV_SAVE, CV_OnOff, NULL, 0, NULL, NULL, 0, 0, NULL};
+
 // Intermission time Tails 04-19-2002
 static CV_PossibleValue_t inttime_cons_t[] = {{0, "MIN"}, {3600, "MAX"}, {0, NULL}};
 consvar_t cv_inttime = {"inttime", "20", CV_NETVAR, inttime_cons_t, NULL, 0, NULL, NULL, 0, 0, NULL};
@@ -366,7 +371,7 @@ consvar_t cv_runscripts = {"runscripts", "Yes", 0, CV_YesNo, NULL, 0, NULL, NULL
 consvar_t cv_pause = {"pausepermission", "Server", CV_NETVAR, pause_cons_t, NULL, 0, NULL, NULL, 0, 0, NULL};
 consvar_t cv_mute = {"mute", "Off", CV_NETVAR|CV_CALL, CV_OnOff, Mute_OnChange, 0, NULL, NULL, 0, 0, NULL};
 
-consvar_t cv_sleep = {"cpusleep", "-1", CV_SAVE, sleeping_cons_t, NULL, -1, NULL, NULL, 0, 0, NULL};
+consvar_t cv_sleep = {"cpusleep", "1", CV_SAVE, sleeping_cons_t, NULL, -1, NULL, NULL, 0, 0, NULL};
 consvar_t cv_freedemocamera = {"freedemocamera", "Off", CV_SAVE, CV_OnOff, NULL};
 
 // Netplay Compatibility with 2.1.25
@@ -401,10 +406,8 @@ const char *netxcmdnames[MAXNETXCMD - 1] =
 	"DELFILE",
 	"SETMOTD",
 	"SUICIDE",
-#ifdef HAVE_BLUA
 	"LUACMD",
 	"LUAVAR"
-#endif
 };
 
 // =========================================================================
@@ -440,9 +443,7 @@ void D_RegisterServerCommands(void)
 	RegisterNetXCmd(XD_PAUSE, Got_Pause);
 	RegisterNetXCmd(XD_SUICIDE, Got_Suicide);
 	RegisterNetXCmd(XD_RUNSOC, Got_RunSOCcmd);
-#ifdef HAVE_BLUA
 	RegisterNetXCmd(XD_LUACMD, Got_Luacmd);
-#endif
 
 	// Remote Administration
 	COM_AddCommand("password", Command_Changepassword_f);
@@ -494,9 +495,7 @@ void D_RegisterServerCommands(void)
 	COM_AddCommand("cheats", Command_Cheats_f); // test
 #ifdef _DEBUG
 	COM_AddCommand("togglemodified", Command_Togglemodified_f);
-#ifdef HAVE_BLUA
 	COM_AddCommand("archivetest", Command_Archivetest_f);
-#endif
 #endif
 
 	// for master server connection
@@ -582,6 +581,7 @@ void D_RegisterServerCommands(void)
 #ifdef NEWPING
 	CV_RegisterVar(&cv_maxping);
 #endif
+	CV_RegisterVar(&cv_showping);
 
 #ifdef SEENAMES
 	 CV_RegisterVar(&cv_allowseenames);
@@ -637,6 +637,8 @@ void D_RegisterClientCommands(void)
 	CV_RegisterVar(&cv_screenshot_option);
 	CV_RegisterVar(&cv_screenshot_folder);
 	CV_RegisterVar(&cv_moviemode);
+	CV_RegisterVar(&cv_movie_option);
+	CV_RegisterVar(&cv_movie_folder);
 	// PNG variables
 	CV_RegisterVar(&cv_zlib_level);
 	CV_RegisterVar(&cv_zlib_memory);
@@ -679,6 +681,8 @@ void D_RegisterClientCommands(void)
 	CV_RegisterVar(&cv_timetic);
 	CV_RegisterVar(&cv_scorepos);
 	CV_RegisterVar(&cv_itemfinder);
+	CV_RegisterVar(&cv_showinput);
+	CV_RegisterVar(&cv_showinputjoy);
 
 	// time attack ghost options are also saved to config
 	CV_RegisterVar(&cv_ghost_bestscore);
@@ -824,7 +828,7 @@ void D_RegisterClientCommands(void)
 #ifdef _DEBUG
 	COM_AddCommand("causecfail", Command_CauseCfail_f);
 #endif
-#if defined(HAVE_BLUA) && defined(LUA_ALLOW_BYTECODE)
+#if defined(LUA_ALLOW_BYTECODE)
 	COM_AddCommand("dumplua", Command_Dumplua_f);
 #endif
 }
@@ -1788,9 +1792,7 @@ static void Got_Mapcmd(UINT8 **cp, INT32 playernum)
 	UINT8 flags;
 	INT32 resetplayer = 1, lastgametype;
 	UINT8 skipprecutscene, FLS;
-#ifdef HAVE_BLUA
 	INT16 mapnumber;
-#endif
 
 	if (playernum != serverplayer && !IsPlayerAdmin(playernum))
 	{
@@ -1848,10 +1850,8 @@ static void Got_Mapcmd(UINT8 **cp, INT32 playernum)
 			emeralds = 0;
 	}
 
-#ifdef HAVE_BLUA
 	mapnumber = M_MapNumber(mapname[3], mapname[4]);
 	LUAh_MapChange(mapnumber);
-#endif
 
 	G_InitNew(ultimatemode, mapname, resetplayer, skipprecutscene);
 	if (demoplayback && !timingdemo)
@@ -4095,7 +4095,6 @@ static void Command_Togglemodified_f(void)
 	modifiedgame = !modifiedgame;
 }
 
-#ifdef HAVE_BLUA
 extern UINT8 *save_p;
 static void Command_Archivetest_f(void)
 {
@@ -4139,7 +4138,6 @@ static void Command_Archivetest_f(void)
 	Z_Free(buf);
 	CONS_Printf("Done. No crash.\n");
 }
-#endif
 #endif
 
 /** Makes a change to ::cv_forceskin take effect immediately.

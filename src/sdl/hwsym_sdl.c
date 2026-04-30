@@ -79,6 +79,8 @@ void *hwSym(const char *funcName,void *handle)
 	GETFUNC(Init);
 	GETFUNC(Draw2DLine);
 	GETFUNC(DrawPolygon);
+	GETFUNC(DrawIndexedTriangles);
+	GETFUNC(RenderSkyDome);
 	GETFUNC(SetBlend);
 	GETFUNC(ClearBuffer);
 	GETFUNC(SetTexture);
@@ -87,13 +89,10 @@ void *hwSym(const char *funcName,void *handle)
 	GETFUNC(ClearMipMapCache);
 	GETFUNC(SetSpecialState);
 	GETFUNC(GetTextureUsed);
-	GETFUNC(DrawMD2);
-	GETFUNC(DrawMD2i);
+	GETFUNC(DrawModel);
+	GETFUNC(CreateModelVBOs);
 	GETFUNC(SetTransform);
-	GETFUNC(GetRenderVersion);
-#ifdef SHUFFLE
 	GETFUNC(PostImgRedraw);
-#endif //SHUFFLE
 	GETFUNC(FlushScreenTextures);
 	GETFUNC(StartScreenWipe);
 	GETFUNC(EndScreenWipe);
@@ -102,6 +101,13 @@ void *hwSym(const char *funcName,void *handle)
 	GETFUNC(MakeScreenTexture);
 	GETFUNC(MakeScreenFinalTexture);
 	GETFUNC(DrawScreenFinalTexture);
+	GETFUNC(CompileShaders);
+	GETFUNC(CleanShaders);
+	GETFUNC(SetShader);
+	GETFUNC(UnSetShader);
+
+	GETFUNC(SetShaderInfo);
+	GETFUNC(LoadCustomShader);
 #else //HWRENDER
 	if (0 == strcmp("FinishUpdate", funcName))
 		return funcPointer; //&FinishUpdate;

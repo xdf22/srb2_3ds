@@ -29,6 +29,15 @@ extern fixed_t projection, projectiony;
 
 extern size_t validcount, linecount, loopcount, framecount;
 
+// The fraction of a tic being drawn (for interpolation between two tics)
+extern fixed_t rendertimefrac;
+// Evaluated delta tics for this frame (how many tics since the last frame)
+extern fixed_t renderdeltatics;
+// The current render is a new logical tic
+extern boolean renderisnewtic;
+
+
+
 //
 // Lighting LUT.
 // Used for z-depth cuing per column/row,
@@ -39,7 +48,8 @@ extern size_t validcount, linecount, loopcount, framecount;
 // Now with 32 levels.
 #define LIGHTLEVELS 32
 #define LIGHTSEGSHIFT 3
-
+#include "r_fps.h" // Uncapped framerate -- Fury
+#include "i_system.h"
 #define MAXLIGHTSCALE 48
 #define LIGHTSCALESHIFT 12
 #define MAXLIGHTZ 128
@@ -54,8 +64,25 @@ extern lighttable_t *zlight[LIGHTLEVELS][MAXLIGHTZ];
 #define NUMCOLORMAPS 32
 
 // Utility functions.
-INT32 R_PointOnSide(fixed_t x, fixed_t y, node_t *node);
-INT32 R_PointOnSegSide(fixed_t x, fixed_t y, seg_t *line);
+INT32 R_OldPointOnSide(fixed_t x, fixed_t y, const node_t *node);
+
+FUNCINLINE INT32 ATTRINLINE PUREFUNC R_PointOnSide(fixed_t x, fixed_t y, const node_t *node)
+{
+	// use cross product to determine side quickly
+	return ((INT64)y - node->y) * node->dx - ((INT64)x - node->x) * node->dy > 0;
+}
+
+FUNCINLINE INT32 ATTRINLINE PUREFUNC R_PointOnSegSide(fixed_t x, fixed_t y, const seg_t *line)
+{
+	fixed_t lx = line->v1->x;
+	fixed_t ly = line->v1->y;
+	fixed_t ldx = line->v2->x - lx;
+	fixed_t ldy = line->v2->y - ly;
+
+	// use cross product to determine side quickly
+	return ((INT64)y - ly) * ldx - ((INT64)x - lx) * ldy > 0;
+}
+
 angle_t R_PointToAngle(fixed_t x, fixed_t y);
 angle_t R_PointToAngle2(fixed_t px2, fixed_t py2, fixed_t px1, fixed_t py1);
 angle_t R_PointToAngleEx(INT32 x2, INT32 y2, INT32 x1, INT32 y1);
@@ -63,7 +90,9 @@ fixed_t R_PointToDist(fixed_t x, fixed_t y);
 fixed_t R_PointToDist2(fixed_t px2, fixed_t py2, fixed_t px1, fixed_t py1);
 
 fixed_t R_ScaleFromGlobalAngle(angle_t visangle);
+boolean R_IsPointInSector(sector_t *sector, fixed_t x, fixed_t y);
 subsector_t *R_PointInSubsector(fixed_t x, fixed_t y);
+subsector_t *R_OldPointInSubsector(fixed_t x, fixed_t y);
 subsector_t *R_IsPointInSubsector(fixed_t x, fixed_t y);
 
 boolean R_DoCulling(line_t *cullheight, line_t *viewcullheight, fixed_t vz, fixed_t bottomh, fixed_t toph);
@@ -82,6 +111,11 @@ extern consvar_t cv_precipdensity, cv_drawdist, cv_drawdist_nights, cv_drawdist_
 extern consvar_t cv_skybox;
 extern consvar_t cv_tailspickup;
 
+// Uncapped Framerate
+
+
+
+
 // Called by startup code.
 void R_Init(void);
 
@@ -95,6 +129,7 @@ void R_ExecuteSetViewSize(void);
 void R_SkyboxFrame(player_t *player);
 
 void R_SetupFrame(player_t *player, boolean skybox);
+boolean R_IsViewpointFirstPerson(player_t *player, boolean skybox);
 // Called by G_Drawer.
 void R_RenderPlayerView(player_t *player);
 

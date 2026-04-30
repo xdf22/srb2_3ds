@@ -111,7 +111,9 @@ static SDL_bool disable_fullscreen = SDL_FALSE;
 #define USE_FULLSCREEN (disable_fullscreen||!allow_fullscreen)?0:cv_fullscreen.value
 static SDL_bool disable_mouse = SDL_FALSE;
 #define USE_MOUSEINPUT (!disable_mouse && cv_usemouse.value && havefocus)
-#define IGNORE_MOUSE (!cv_alwaysgrabmouse.value && (menuactive || paused || con_destlines || chat_on || gamestate != GS_LEVEL))
+#define IGNORE_MOUSE(condition) (!cv_alwaysgrabmouse.value && ((menuactive && !M_MouseNeeded()) || paused || con_destlines || chat_on || condition))
+#define IGNORE_MOUSE_BUTTONS IGNORE_MOUSE(0)
+#define IGNORE_MOUSE_GRAB IGNORE_MOUSE(gamestate != GS_LEVEL)
 #define MOUSE_MENU false //(!disable_mouse && cv_usemouse.value && menuactive && !USE_FULLSCREEN)
 #define MOUSEBUTTONS_MAX MOUSEBUTTONS
 
@@ -355,11 +357,6 @@ static INT32 Impl_SDL_Scancode_To_Keycode(SDL_Scancode code)
 		case SDL_SCANCODE_RGUI:   return KEY_RIGHTWIN;
 		default:                  break;
 	}
-#ifdef HWRENDER
-	DBG_Printf("Unknown incoming scancode: %d, represented %c\n",
-				code,
-				SDL_GetKeyName(SDL_GetKeyFromScancode(code)));
-#endif
 	return 0;
 }
 
@@ -390,7 +387,7 @@ void I_UpdateMouseGrab(void)
 {
 	if (SDL_WasInit(SDL_INIT_VIDEO) == SDL_INIT_VIDEO && window != NULL
 	&& SDL_GetMouseFocus() == window && SDL_GetKeyboardFocus() == window
-	&& !IGNORE_MOUSE)
+	&& !IGNORE_MOUSE_GRAB)
 		SDLdoGrabMouse();
 }
 
@@ -598,7 +595,7 @@ static void Impl_HandleWindowEvent(SDL_WindowEvent evt)
 		}
 		//else firsttimeonmouse = SDL_FALSE;
 
-		if (USE_MOUSEINPUT && !IGNORE_MOUSE)
+		if (USE_MOUSEINPUT && !IGNORE_MOUSE_GRAB)
 			SDLdoGrabMouse();
 
 	}
@@ -650,7 +647,7 @@ static void Impl_HandleMouseMotionEvent(SDL_MouseMotionEvent evt)
 
 	if (USE_MOUSEINPUT)
 	{
-		if ((SDL_GetMouseFocus() != window && SDL_GetKeyboardFocus() != window) || (IGNORE_MOUSE && !firstmove))
+		if ((SDL_GetMouseFocus() != window && SDL_GetKeyboardFocus() != window) || (IGNORE_MOUSE_GRAB && !firstmove))
 		{
 			SDLdoUngrabMouse();
 			firstmove = false;
@@ -706,7 +703,7 @@ static void Impl_HandleMouseButtonEvent(SDL_MouseButtonEvent evt, Uint32 type)
 	// this apparently makes a mouse button down event but not a mouse button up event,
 	// resulting in whatever key was pressed down getting "stuck" if we don't ignore it.
 	// -- Monster Iestyn (28/05/18)
-	if (SDL_GetMouseFocus() != window || IGNORE_MOUSE)
+	if (SDL_GetMouseFocus() != window || IGNORE_MOUSE_BUTTONS)
 		return;
 
 	/// \todo inputEvent.button.which
@@ -933,6 +930,136 @@ void I_GetEvent(void)
 			case SDL_JOYBUTTONDOWN:
 				Impl_HandleJoystickButtonEvent(evt.jbutton, evt.type);
 				break;
+			case SDL_JOYDEVICEADDED:
+				{
+					SDL_Joystick *newjoy = SDL_JoystickOpen(evt.jdevice.which);
+
+					CONS_Debug(DBG_GAMELOGIC, "Joystick device index %d added\n", evt.jdevice.which + 1);
+
+					// Because SDL's device index is unstable, we're going to cheat here a bit:
+					// For the first joystick setting that is NOT active:
+					// 1. Set cv_usejoystickX.value to the new device index (this does not change what is written to config.cfg)
+					// 2. Set OTHERS' cv_usejoystickX.value to THEIR new device index, because it likely changed
+					//    * If device doesn't exist, switch cv_usejoystick back to default value (.string)
+					//      * BUT: If that default index is being occupied, use ANOTHER cv_usejoystick's default value!
+					if (newjoy && (!JoyInfo.dev || !SDL_JoystickGetAttached(JoyInfo.dev))
+						&& JoyInfo2.dev != newjoy) // don't override a currently active device
+					{
+						cv_usejoystick.value = evt.jdevice.which + 1;
+
+						if (JoyInfo2.dev)
+							cv_usejoystick2.value = I_GetJoystickDeviceIndex(JoyInfo2.dev) + 1;
+						else if (atoi(cv_usejoystick2.string) != JoyInfo.oldjoy
+								&& atoi(cv_usejoystick2.string) != cv_usejoystick.value)
+							cv_usejoystick2.value = atoi(cv_usejoystick2.string);
+						else if (atoi(cv_usejoystick.string) != JoyInfo.oldjoy
+								&& atoi(cv_usejoystick.string) != cv_usejoystick.value)
+							cv_usejoystick2.value = atoi(cv_usejoystick.string);
+						else // we tried...
+							cv_usejoystick2.value = 0;
+					}
+					else if (newjoy && (!JoyInfo2.dev || !SDL_JoystickGetAttached(JoyInfo2.dev))
+						&& JoyInfo.dev != newjoy) // don't override a currently active device
+					{
+						cv_usejoystick2.value = evt.jdevice.which + 1;
+
+						if (JoyInfo.dev)
+							cv_usejoystick.value = I_GetJoystickDeviceIndex(JoyInfo.dev) + 1;
+						else if (atoi(cv_usejoystick.string) != JoyInfo2.oldjoy
+								&& atoi(cv_usejoystick.string) != cv_usejoystick2.value)
+							cv_usejoystick.value = atoi(cv_usejoystick.string);
+						else if (atoi(cv_usejoystick2.string) != JoyInfo2.oldjoy
+								&& atoi(cv_usejoystick2.string) != cv_usejoystick2.value)
+							cv_usejoystick.value = atoi(cv_usejoystick2.string);
+						else // we tried...
+							cv_usejoystick.value = 0;
+					}
+
+					// Was cv_usejoystick disabled in settings?
+					if (!strcmp(cv_usejoystick.string, "0") || !cv_usejoystick.value)
+						cv_usejoystick.value = 0;
+					else if (atoi(cv_usejoystick.string) <= I_NumJoys() // don't mess if we intentionally set higher than NumJoys
+						     && cv_usejoystick.value) // update the cvar ONLY if a device exists
+						CV_SetValue(&cv_usejoystick, cv_usejoystick.value);
+
+					if (!strcmp(cv_usejoystick2.string, "0") || !cv_usejoystick2.value)
+						cv_usejoystick2.value = 0;
+					else if (atoi(cv_usejoystick2.string) <= I_NumJoys() // don't mess if we intentionally set higher than NumJoys
+					         && cv_usejoystick2.value) // update the cvar ONLY if a device exists
+						CV_SetValue(&cv_usejoystick2, cv_usejoystick2.value);
+
+					// Update all joysticks' init states
+					// This is a little wasteful since cv_usejoystick already calls this, but
+					// we need to do this in case CV_SetValue did nothing because the string was already same.
+					// if the device is already active, this should do nothing, effectively.
+					I_InitJoystick();
+					I_InitJoystick2();
+
+					CONS_Debug(DBG_GAMELOGIC, "Joystick1 device index: %d\n", JoyInfo.oldjoy);
+					CONS_Debug(DBG_GAMELOGIC, "Joystick2 device index: %d\n", JoyInfo2.oldjoy);
+
+					// update the menu
+					if (currentMenu == &OP_JoystickSetDef)
+						M_SetupJoystickMenu(0);
+
+					if (JoyInfo.dev != newjoy && JoyInfo2.dev != newjoy)
+						SDL_JoystickClose(newjoy);
+				}
+				break;
+			case SDL_JOYDEVICEREMOVED:
+				if (JoyInfo.dev && !SDL_JoystickGetAttached(JoyInfo.dev))
+				{
+					CONS_Debug(DBG_GAMELOGIC, "Joystick1 removed, device index: %d\n", JoyInfo.oldjoy);
+					I_ShutdownJoystick();
+				}
+
+				if (JoyInfo2.dev && !SDL_JoystickGetAttached(JoyInfo2.dev))
+				{
+					CONS_Debug(DBG_GAMELOGIC, "Joystick2 removed, device index: %d\n", JoyInfo2.oldjoy);
+					I_ShutdownJoystick2();
+				}
+
+				// Update the device indexes, because they likely changed
+				// * If device doesn't exist, switch cv_usejoystick back to default value (.string)
+				//   * BUT: If that default index is being occupied, use ANOTHER cv_usejoystick's default value!
+				if (JoyInfo.dev)
+					cv_usejoystick.value = JoyInfo.oldjoy = I_GetJoystickDeviceIndex(JoyInfo.dev) + 1;
+				else if (atoi(cv_usejoystick.string) != JoyInfo2.oldjoy)
+					cv_usejoystick.value = atoi(cv_usejoystick.string);
+				else if (atoi(cv_usejoystick2.string) != JoyInfo2.oldjoy)
+					cv_usejoystick.value = atoi(cv_usejoystick2.string);
+				else // we tried...
+					cv_usejoystick.value = 0;
+
+				if (JoyInfo2.dev)
+					cv_usejoystick2.value = JoyInfo2.oldjoy = I_GetJoystickDeviceIndex(JoyInfo2.dev) + 1;
+				else if (atoi(cv_usejoystick2.string) != JoyInfo.oldjoy)
+					cv_usejoystick2.value = atoi(cv_usejoystick2.string);
+				else if (atoi(cv_usejoystick.string) != JoyInfo.oldjoy)
+					cv_usejoystick2.value = atoi(cv_usejoystick.string);
+				else // we tried...
+					cv_usejoystick2.value = 0;
+
+				// Was cv_usejoystick disabled in settings?
+				if (!strcmp(cv_usejoystick.string, "0"))
+					cv_usejoystick.value = 0;
+				else if (atoi(cv_usejoystick.string) <= I_NumJoys() // don't mess if we intentionally set higher than NumJoys
+						 && cv_usejoystick.value) // update the cvar ONLY if a device exists
+					CV_SetValue(&cv_usejoystick, cv_usejoystick.value);
+
+				if (!strcmp(cv_usejoystick2.string, "0"))
+					cv_usejoystick2.value = 0;
+				else if (atoi(cv_usejoystick2.string) <= I_NumJoys() // don't mess if we intentionally set higher than NumJoys
+						 && cv_usejoystick2.value) // update the cvar ONLY if a device exists
+					CV_SetValue(&cv_usejoystick2, cv_usejoystick2.value);
+
+				CONS_Debug(DBG_GAMELOGIC, "Joystick1 device index: %d\n", JoyInfo.oldjoy);
+				CONS_Debug(DBG_GAMELOGIC, "Joystick2 device index: %d\n", JoyInfo2.oldjoy);
+
+				// update the menu
+				if (currentMenu == &OP_JoystickSetDef)
+					M_SetupJoystickMenu(0);
+				break;
 			case SDL_QUIT:
 				I_Quit();
 				M_QuitResponse('y');
@@ -972,7 +1099,7 @@ void I_StartupMouse(void)
 	}
 	else
 		firsttimeonmouse = SDL_FALSE;
-	if (cv_usemouse.value && !IGNORE_MOUSE)
+	if (cv_usemouse.value && !IGNORE_MOUSE_GRAB)
 		SDLdoGrabMouse();
 	else
 		SDLdoUngrabMouse();
@@ -1042,7 +1169,9 @@ void I_UpdateNoBlit(void)
 // from PrBoom's src/SDL/i_video.c
 static inline boolean I_SkipFrame(void)
 {
-#if 0
+#if 1
+	return false;
+#else
 	static boolean skip = false;
 
 	if (rendermode != render_soft)
@@ -1063,12 +1192,14 @@ static inline boolean I_SkipFrame(void)
 			return false;
 	}
 #endif
-	return false;
 }
 
 //
 // I_FinishUpdate
 //
+
+static SDL_Rect src_rect = { 0, 0, 0, 0 };
+
 void I_FinishUpdate(void)
 {
 	if (rendermode == render_none)
@@ -1077,17 +1208,11 @@ void I_FinishUpdate(void)
 	if (I_SkipFrame())
 		return;
 
-	if (cv_ticrate.value)
-		SCR_DisplayTicRate();
+	SCR_DisplayTicRate();
 
 	if (rendermode == render_soft && screens[0])
 	{
-		SDL_Rect rect;
 
-		rect.x = 0;
-		rect.y = 0;
-		rect.w = vid.width;
-		rect.h = vid.height;
 
 		if (!bufSurface) //Double-Check
 		{
@@ -1095,14 +1220,15 @@ void I_FinishUpdate(void)
 		}
 		if (bufSurface)
 		{
-			SDL_BlitSurface(bufSurface, NULL, vidSurface, &rect);
+
+			SDL_BlitSurface(bufSurface, &src_rect, vidSurface, &src_rect);
 			// Fury -- there's no way around UpdateTexture, the GL backend uses it anyway
 			SDL_LockSurface(vidSurface);
-			SDL_UpdateTexture(texture, &rect, vidSurface->pixels, vidSurface->pitch);
+			SDL_UpdateTexture(texture, &src_rect, vidSurface->pixels, vidSurface->pitch);
 			SDL_UnlockSurface(vidSurface);
 		}
 		SDL_RenderClear(renderer);
-		SDL_RenderCopy(renderer, texture, NULL, NULL);
+		SDL_RenderCopy(renderer, texture, &src_rect, NULL);
 		SDL_RenderPresent(renderer);
 	}
 
@@ -1305,6 +1431,28 @@ void VID_PrepareModeList(void)
 #endif
 }
 
+static UINT32 refresh_rate;
+static UINT32 VID_GetRefreshRate(void)
+{
+	int index = SDL_GetWindowDisplayIndex(window);
+	SDL_DisplayMode m;
+
+	if (SDL_WasInit(SDL_INIT_VIDEO) == 0)
+	{
+		// Video not init yet.
+		return 0;
+	}
+
+	if (SDL_GetCurrentDisplayMode(index, &m) != 0)
+	{
+		// Error has occurred.
+		return 0;
+	}
+
+	return m.refresh_rate;
+}
+
+
 INT32 VID_SetMode(INT32 modeNum)
 {
 	SDLdoUngrabMouse();
@@ -1336,6 +1484,11 @@ INT32 VID_SetMode(INT32 modeNum)
 		vid.modenum = -1;
 	}
 	//Impl_SetWindowName("SRB2 "VERSIONSTRING);
+
+	src_rect.w = vid.width;
+	src_rect.h = vid.height;
+
+	refresh_rate = VID_GetRefreshRate();
 
 	SDLSetMode(vid.width, vid.height, USE_FULLSCREEN);
 	Impl_VideoSetupBuffer();
@@ -1403,8 +1556,16 @@ static SDL_bool Impl_CreateWindow(SDL_bool fullscreen)
 		flags = 0; // Use this to set SDL_RENDERER_* flags now
 		if (usesdl2soft)
 			flags |= SDL_RENDERER_SOFTWARE;
+
+	#if 0
+		// This shit is BROKEN.
+		// - The version of SDL we're using cannot toggle VSync at runtime. We'll need a new SDL version implemented to have this work properly.
+		// - cv_vidwait is initialized before config is loaded, so it's forced to default value at runtime, and forced off when switching. The config loading code would need restructured.
+		// - With both this & frame interpolation on, I_FinishUpdate takes x10 longer. At this point, it is simpler to use a standard FPS cap.
+		// So you can probably guess why I'm kinda over this, I'm just disabling it.
 		else if (cv_vidwait.value)
 			flags |= SDL_RENDERER_PRESENTVSYNC;
+	#endif
 
 		renderer = SDL_CreateRenderer(window, -1, flags);
 		if (renderer == NULL)
@@ -1606,6 +1767,8 @@ void I_StartupGraphics(void)
 		HWD.pfnFinishUpdate     = NULL;
 		HWD.pfnDraw2DLine       = hwSym("Draw2DLine",NULL);
 		HWD.pfnDrawPolygon      = hwSym("DrawPolygon",NULL);
+		HWD.pfnDrawIndexedTriangles = hwSym("DrawIndexedTriangles",NULL);
+		HWD.pfnRenderSkyDome    = hwSym("RenderSkyDome",NULL);
 		HWD.pfnSetBlend         = hwSym("SetBlend",NULL);
 		HWD.pfnClearBuffer      = hwSym("ClearBuffer",NULL);
 		HWD.pfnSetTexture       = hwSym("SetTexture",NULL);
@@ -1615,13 +1778,10 @@ void I_StartupGraphics(void)
 		HWD.pfnSetSpecialState  = hwSym("SetSpecialState",NULL);
 		HWD.pfnSetPalette       = hwSym("SetPalette",NULL);
 		HWD.pfnGetTextureUsed   = hwSym("GetTextureUsed",NULL);
-		HWD.pfnDrawMD2          = hwSym("DrawMD2",NULL);
-		HWD.pfnDrawMD2i         = hwSym("DrawMD2i",NULL);
+		HWD.pfnDrawModel        = hwSym("DrawModel",NULL);
+		HWD.pfnCreateModelVBOs  = hwSym("CreateModelVBOs",NULL);
 		HWD.pfnSetTransform     = hwSym("SetTransform",NULL);
-		HWD.pfnGetRenderVersion = hwSym("GetRenderVersion",NULL);
-#ifdef SHUFFLE
 		HWD.pfnPostImgRedraw    = hwSym("PostImgRedraw",NULL);
-#endif
 		HWD.pfnFlushScreenTextures=hwSym("FlushScreenTextures",NULL);
 		HWD.pfnStartScreenWipe  = hwSym("StartScreenWipe",NULL);
 		HWD.pfnEndScreenWipe    = hwSym("EndScreenWipe",NULL);
@@ -1630,10 +1790,14 @@ void I_StartupGraphics(void)
 		HWD.pfnMakeScreenTexture= hwSym("MakeScreenTexture",NULL);
 		HWD.pfnMakeScreenFinalTexture=hwSym("MakeScreenFinalTexture",NULL);
 		HWD.pfnDrawScreenFinalTexture=hwSym("DrawScreenFinalTexture",NULL);
-		// check gl renderer lib
-		if (HWD.pfnGetRenderVersion() != VERSION)
-			I_Error("%s", M_GetText("The version of the renderer doesn't match the version of the executable\nBe sure you have installed SRB2 properly.\n"));
-		if (!HWD.pfnInit(I_Error)) // let load the OpenGL library
+		HWD.pfnCompileShaders   = hwSym("CompileShaders",NULL);
+		HWD.pfnCleanShaders     = hwSym("CleanShaders",NULL);
+		HWD.pfnSetShader = hwSym("SetShader",NULL);
+		HWD.pfnUnSetShader = hwSym("UnSetShader",NULL);
+		HWD.pfnSetShaderInfo    = hwSym("SetShaderInfo",NULL);
+		HWD.pfnLoadCustomShader = hwSym("LoadCustomShader",NULL);
+
+		if (!HWD.pfnInit()) // load the OpenGL library
 		{
 			rendermode = render_soft;
 		}
@@ -1728,5 +1892,15 @@ void I_ShutdownGraphics(void)
 #endif
 	SDL_QuitSubSystem(SDL_INIT_VIDEO);
 	framebuffer = SDL_FALSE;
+}
+
+UINT32 I_GetRefreshRate(void)
+{
+	// Moved to VID_GetRefreshRate.
+	// Precalculating it like that won't work as
+	// well for windowed mode since you can drag
+	// the window around, but very slow PCs might have
+	// trouble querying mode over and over again.
+	return refresh_rate;
 }
 #endif

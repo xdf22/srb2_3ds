@@ -14,6 +14,7 @@
 #ifndef __P_LOCAL__
 #define __P_LOCAL__
 
+#include "doomtype.h"
 #include "command.h"
 #include "d_player.h"
 #include "d_think.h"
@@ -65,6 +66,7 @@
 
 // both the head and tail of the thinker list
 extern thinker_t thinkercap;
+extern mobj_t *mobjcache;
 
 void P_InitThinkers(void);
 void P_AddThinker(thinker_t *thinker);
@@ -85,6 +87,7 @@ typedef struct camera_s
 	// Camera demobjerization
 	// Info for drawing: position.
 	fixed_t x, y, z;
+	boolean reset;
 
 	//More drawing info: to determine current sprite.
 	angle_t angle; // orientation
@@ -205,7 +208,6 @@ void P_RecalcPrecipInSector(sector_t *sector);
 void P_PrecipitationEffects(void);
 
 void P_RemoveMobj(mobj_t *th);
-boolean P_MobjWasRemoved(mobj_t *th);
 void P_RemoveSavegameMobj(mobj_t *th);
 boolean P_SetPlayerMobjState(mobj_t *mobj, statenum_t state);
 boolean P_SetMobjState(mobj_t *mobj, statenum_t state);
@@ -216,6 +218,14 @@ boolean P_RailThinker(mobj_t *mobj);
 void P_PushableThinker(mobj_t *mobj);
 void P_SceneryThinker(mobj_t *mobj);
 
+// This does not need to be added to Lua.
+// To test it in Lua, check mobj.valid
+FUNCINLINE static boolean ATTRINLINE PUREFUNC P_MobjWasRemoved(mobj_t *mobj)
+{
+	if (mobj && mobj->thinker.function.acp1 == (actionf_p1)P_MobjThinker)
+		return false;
+	return true;
+}
 
 fixed_t P_MobjFloorZ(mobj_t *mobj, sector_t *sector, sector_t *boundsec, fixed_t x, fixed_t y, line_t *line, boolean lowest, boolean perfect);
 fixed_t P_MobjCeilingZ(mobj_t *mobj, sector_t *sector, sector_t *boundsec, fixed_t x, fixed_t y, line_t *line, boolean lowest, boolean perfect);
@@ -297,9 +307,7 @@ extern mobj_t *tmfloorthing, *tmhitthing, *tmthing;
 extern camera_t *mapcampointer;
 extern fixed_t tmx;
 extern fixed_t tmy;
-#ifdef ESLOPE
 extern pslope_t *tmfloorslope, *tmceilingslope;
-#endif
 
 /* cphipps 2004/08/30 */
 extern void P_MapStart(void);
@@ -319,7 +327,8 @@ boolean P_CheckPosition(mobj_t *thing, fixed_t x, fixed_t y);
 boolean P_CheckCameraPosition(fixed_t x, fixed_t y, camera_t *thiscam);
 boolean P_TryMove(mobj_t *thing, fixed_t x, fixed_t y, boolean allowdropoff);
 boolean P_Move(mobj_t *actor, fixed_t speed);
-boolean P_TeleportMove(mobj_t *thing, fixed_t x, fixed_t y, fixed_t z);
+boolean P_SetOrigin(mobj_t *thing, fixed_t x, fixed_t y, fixed_t z);
+boolean P_MoveOrigin(mobj_t *thing, fixed_t x, fixed_t y, fixed_t z);
 void P_SlideMove(mobj_t *mo);
 void P_BounceMove(mobj_t *mo);
 boolean P_CheckSight(mobj_t *t1, mobj_t *t2);

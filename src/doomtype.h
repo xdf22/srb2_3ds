@@ -297,6 +297,7 @@ size_t strlcpy(char *dst, const char *src, size_t siz);
 	#if (__GNUC__ > 3) || (__GNUC__ == 3 && __GNUC_MINOR__ >= 1) // >= GCC 3.1
 		#define FUNCDEAD __attribute__ ((deprecated))
 		#define FUNCINLINE __attribute__((always_inline))
+		#define PUREFUNC __attribute__((pure))
 		#define FUNCNONNULL __attribute__((nonnull))
 	#endif
 
@@ -380,19 +381,24 @@ size_t strlcpy(char *dst, const char *src, size_t siz);
 #ifndef FILESTAMP
 #define FILESTAMP
 #endif
+#ifndef PUREFUNC
+#define PUREFUNC
+#endif
 
 /* Miscellaneous types that don't fit anywhere else (Can this be changed?) */
+
+typedef struct
+{
+	UINT8 red;
+	UINT8 green;
+	UINT8 blue;
+	UINT8 alpha;
+} byteColor_t;
 
 union FColorRGBA
 {
 	UINT32 rgba;
-	struct
-	{
-		UINT8 red;
-		UINT8 green;
-		UINT8 blue;
-		UINT8 alpha;
-	} s;
+	byteColor_t s;
 } ATTRPACK;
 typedef union FColorRGBA RGBA_t;
 
@@ -418,5 +424,7 @@ typedef UINT32 tic_t;
 #else
 #define UINT2RGBA(a) (UINT32)((a&0xff)<<24)|((a&0xff00)<<8)|((a&0xff0000)>>8)|(((UINT32)a&0xff000000)>>24)
 #endif
+
+typedef UINT64 precise_t;
 
 #endif //__DOOMTYPE__

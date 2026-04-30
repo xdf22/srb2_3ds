@@ -15,6 +15,7 @@
 #include "screen.h"
 #include "console.h"
 #include "am_map.h"
+#include "i_time.h"
 #include "i_system.h"
 #include "i_video.h"
 #include "r_local.h"
@@ -176,6 +177,7 @@ void SCR_Startup(void)
 
 	V_Init();
 	CV_RegisterVar(&cv_ticrate);
+	CV_RegisterVar(&cv_tpscounter);
 	CV_RegisterVar(&cv_constextsize);
 
 	V_SetPalette(0);
@@ -325,17 +327,17 @@ void SCR_DisplayTicRate(void)
 	tic_t totaltics = 0;
 	INT32 ticcntcolor = 0;
 
-	for (i = lasttic + 1; i < TICRATE+lasttic && i < ontic; ++i)
-		fpsgraph[i % TICRATE] = false;
+	for (i = lasttic + 1; i < cv_fpscap.value+lasttic && i < ontic; ++i)
+		fpsgraph[i % cv_fpscap.value] = false;
 
-	fpsgraph[ontic % TICRATE] = true;
+	fpsgraph[ontic % cv_fpscap.value] = true;
 
-	for (i = 0;i < TICRATE;++i)
+	for (i = 0;i < cv_fpscap.value;++i)
 		if (fpsgraph[i])
 			++totaltics;
 
-	if (totaltics <= TICRATE/2) ticcntcolor = V_REDMAP;
-	else if (totaltics == TICRATE) ticcntcolor = V_GREENMAP;
+	if (totaltics <= cv_fpscap.value/2) ticcntcolor = V_REDMAP;
+	else if (totaltics == cv_fpscap.value) ticcntcolor = V_GREENMAP;
 
 	if (cv_ticrate.value == 2) // compact counter
 	V_DrawString(vid.width - (16 * vid.dupx), vid.height-(8*vid.dupy),
@@ -345,7 +347,7 @@ void SCR_DisplayTicRate(void)
 		V_DrawString(vid.width - (24 * vid.dupx), vid.height - (16 * vid.dupy),
 			V_YELLOWMAP | V_NOSCALESTART, "FPS");
 		V_DrawString(vid.width - (40 * vid.dupx), vid.height - (8 * vid.dupy),
-			ticcntcolor | V_NOSCALESTART, va("%02d/%02u", totaltics, TICRATE));
+			ticcntcolor | V_NOSCALESTART, va("%02d/%02u", totaltics, cv_fpscap.value));
 	}
 		lasttic = ontic;
 

@@ -36,11 +36,9 @@
 #else
 #include <GL/gl.h>
 
-#ifndef MINI_GL_COMPATIBILITY
 #ifdef STATIC_OPENGL // Because of the 1.3 functions, you'll need GLext to compile it if static
 #define GL_GLEXT_PROTOTYPES
 #include <GL/glext.h>
-#endif
 #endif
 #endif
 
@@ -67,14 +65,14 @@
 //#undef DEBUG_TO_FILE
 //#endif
 
+
+
+
 #ifdef DEBUG_TO_FILE
 extern FILE             *gllogstream;
 #endif
 
-#ifndef DRIVER_STRING
-//    #define USE_PALETTED_TEXTURE
-#define DRIVER_STRING "HWRAPI Init(): SRB2 OpenGL renderer" // Tails
-#endif
+
 
 // ==========================================================================
 //                                                                     PROTOS
@@ -83,17 +81,12 @@ extern FILE             *gllogstream;
 boolean LoadGL(void);
 void *GetGLFunc(const char *proc);
 boolean SetupGLfunc(void);
-boolean SetupGLFunc13(void);
+void SetupGLFunc4(void);
 void Flush(void);
 INT32 isExtAvailable(const char *extension, const GLubyte *start);
 int SetupPixelFormat(INT32 WantColorBits, INT32 WantStencilBits, INT32 WantDepthBits);
 void SetModelView(GLint w, GLint h);
 void SetStates(void);
-FUNCMATH float byteasfloat(UINT8 fbyte);
-#ifdef USE_PALETTED_TEXTURE
-extern PFNGLCOLORTABLEEXTPROC glColorTableEXT;
-extern GLubyte                palette_tex[256*3];
-#endif
 
 #ifndef GL_EXT_texture_filter_anisotropic
 #define GL_TEXTURE_MAX_ANISOTROPY_EXT     0x84FE
@@ -119,13 +112,20 @@ typedef void (APIENTRY * PFNglGetIntegerv) (GLenum pname, GLint *params);
 extern PFNglGetIntegerv pglGetIntegerv;
 typedef const GLubyte* (APIENTRY  * PFNglGetString) (GLenum name);
 extern PFNglGetString pglGetString;
+#if 0
+typedef void (APIENTRY * PFNglEnableClientState) (GLenum cap); // redefined in r_opengl.c
+static PFNglEnableClientState pglEnableClientState;
+#endif
 #endif
 
 // ==========================================================================
 //                                                                     GLOBAL
 // ==========================================================================
 
-extern const GLubyte    *gl_extensions;
+extern const GLubyte	*gl_version;
+extern const GLubyte	*gl_renderer;
+extern const GLubyte	*gl_extensions;
+
 extern RGBA_t           myPaletteData[];
 extern GLint            screen_width;
 extern GLint            screen_height;

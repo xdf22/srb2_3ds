@@ -508,7 +508,7 @@ boolean Playing(void);
 void D_QuitNetGame(void);
 
 //? How many ticks to run?
-void TryRunTics(tic_t realtic);
+boolean TryRunTics(tic_t realtic);
 
 // extra data for lmps
 // these functions scare me. they contain magic.
@@ -523,6 +523,7 @@ SINT8 nametonum(const char *name);
 
 extern char motd[254], server_context[8];
 extern UINT8 playernode[MAXPLAYERS];
+extern boolean serverrunning;
 
 INT32 D_NumPlayers(void);
 void D_ResetTiccmds(void);
@@ -536,4 +537,6 @@ extern UINT8 hu_resynching;
 
 extern UINT8 adminpassmd5[16];
 extern boolean adminpasswordset;
+
+extern boolean hu_stopped;
 #endif

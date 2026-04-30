@@ -23,7 +23,7 @@
 #include "p_maputl.h"
 #include "w_wad.h"
 
-#ifdef ESLOPE
+
 
 static pslope_t *slopelist = NULL;
 static UINT16 slopecount = 0;
@@ -559,7 +559,7 @@ static pslope_t *P_NewVertexSlope(INT16 tag1, INT16 tag2, INT16 tag3, UINT8 flag
 		if (mt->extrainfo)
 			mt->z = mt->options;
 		else
-			mt->z = (R_PointInSubsector(mt->x << FRACBITS, mt->y << FRACBITS)->sector->floorheight >> FRACBITS) + (mt->options >> ZSHIFT);
+			mt->z = (R_OldPointInSubsector(mt->x << FRACBITS, mt->y << FRACBITS)->sector->floorheight >> FRACBITS) + (mt->options >> ZSHIFT);
 	}
 
 	P_ReconfigureVertexSlope(ret);
@@ -625,7 +625,6 @@ void P_ResetDynamicSlopes(void) {
 	size_t i;
 #ifdef ESLOPE_TYPESHIM // Rewrite old specials to new ones, and give a console warning
 	boolean warned = false;
-#endif
 
 	slopelist = NULL;
 	slopecount = 0;
@@ -740,6 +739,10 @@ void P_ResetDynamicSlopes(void) {
 // Various utilities related to slopes
 //
 
+
+
+
+
 //
 // P_GetZAt
 //
@@ -777,12 +780,12 @@ fixed_t P_GetFFloorBottomZAt(const ffloor_t *ffloor, fixed_t x, fixed_t y)
 	return *ffloor->b_slope ? P_GetZAt(*ffloor->b_slope, x, y) : *ffloor->bottomheight;
 }
 
-
 // Returns the height of the light list at (x, y)
 fixed_t P_GetLightZAt(const lightlist_t *light, fixed_t x, fixed_t y)
 {
 	return light->slope ? P_GetZAt(light->slope, x, y) : light->height;
 }
+
 
 //
 // P_QuantizeMomentumToSlope

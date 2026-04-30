@@ -46,10 +46,8 @@
 #include "hardware/hw_main.h"
 #endif
 
-#ifdef HAVE_BLUA
 #include "lua_hud.h"
 #include "lua_hook.h"
-#endif
 
 // coords are scaled
 #define HU_INPUTX 0
@@ -164,6 +162,10 @@ static INT32 cechoflags = 0;
 //======================================================================
 //                          HEADS UP INIT
 //======================================================================
+
+
+static tic_t resynch_ticker = 0;
+
 
 #ifndef NONET
 // just after
@@ -394,7 +396,10 @@ void HU_AddChatText(const char *text, boolean playsound)
 	if (OLDCHAT) // if we're using oldchat, print directly in console
 		CONS_Printf("%s\n", text);
 	else			// if we aren't, still save the message to log.txt
-		CON_LogMessage(va("%s\n", text));
+	{
+		CON_LogMessage(text);
+		CON_LogMessage("\n"); // Add newline. Don't use va for that, since `text` might be refering to va's buffer itself
+	}
 #else
 	(void)playsound;
 	CONS_Printf("%s\n", text);
@@ -665,10 +670,8 @@ static void Got_Saycmd(UINT8 **p, INT32 playernum)
 
 	// run the lua hook even if we were supposed to eat the msg, netgame consistency goes first.
 
-#ifdef HAVE_BLUA
 	if (LUAh_PlayerMsg(playernum, target, flags, msg))
 		return;
-#endif
 
 	if (spam_eatmsg)
 		return; // don't proceed if we were supposed to eat the message.
@@ -911,6 +914,41 @@ void HU_Ticker(void)
 		hu_showscores = !chat_on;
 	else
 		hu_showscores = false;
+
+#ifndef NONET
+	if (chat_on)
+	{
+		// count down the scroll timer.
+		if (chat_scrolltime > 0)
+			chat_scrolltime--;
+	}
+
+	if (netgame)
+	{
+		size_t i = 0;
+
+		// handle spam while we're at it:
+		for(; (i<MAXPLAYERS); i++)
+		{
+			if (stop_spamming[i] > 0)
+				stop_spamming[i]--;
+		}
+
+		// handle chat timers
+		for (i=0; (i<chat_nummsg_min); i++)
+		{
+			if (chat_timers[i] > 0)
+				chat_timers[i]--;
+			else
+				HU_removeChatText_Mini();
+		}
+	}
+#endif
+
+	if (cechotimer > 0) --cechotimer;
+
+	if (hu_resynching)
+		resynch_ticker++;
 }
 
 #ifndef NONET
@@ -1344,7 +1382,7 @@ static void HU_drawMiniChat(void)
 
 	for (; i>0; i--)
 	{
-		const char *msg = CHAT_WordWrap(x+2, boxw-(charwidth*2), V_SNAPTOBOTTOM|V_SNAPTOLEFT|V_ALLOWLOWERCASE, chat_mini[i-1]);
+		char *msg = CHAT_WordWrap(x+2, boxw-(charwidth*2), V_SNAPTOBOTTOM|V_SNAPTOLEFT|V_ALLOWLOWERCASE, chat_mini[i-1]);
 		size_t j = 0;
 		INT32 linescount = 0;
 
@@ -1386,6 +1424,7 @@ static void HU_drawMiniChat(void)
 		dy = 0;
 		dx = 0;
 		msglines += linescount+1;
+		Z_Free(msg);
 	}
 
 	y = chaty - charheight*(msglines+1);
@@ -1409,7 +1448,7 @@ static void HU_drawMiniChat(void)
 		INT32 timer = ((cv_chattime.value*TICRATE)-chat_timers[i]) - cv_chattime.value*TICRATE+9; // see below...
 		INT32 transflag = (timer >= 0 && timer <= 9) ? (timer*V_10TRANS) : 0; // you can make bad jokes out of this one.
 		size_t j = 0;
-		const char *msg = CHAT_WordWrap(x+2, boxw-(charwidth*2), V_SNAPTOBOTTOM|V_SNAPTOLEFT|V_ALLOWLOWERCASE, chat_mini[i]); // get the current message, and word wrap it.
+		char *msg = CHAT_WordWrap(x+2, boxw-(charwidth*2), V_SNAPTOBOTTOM|V_SNAPTOLEFT|V_ALLOWLOWERCASE, chat_mini[i]); // get the current message, and word wrap it.
 		UINT8 *colormap = NULL;
 
 		while(msg[j]) // iterate through msg
@@ -1455,6 +1494,7 @@ static void HU_drawMiniChat(void)
 		}
 		dy += charheight;
 		dx = 0;
+		Z_Free(msg);
 	}
 
 	// decrement addy and make that shit smooth:
@@ -1508,7 +1548,7 @@ static void HU_drawChatLog(INT32 offset)
 	{
 		INT32 clrflag = 0;
 		INT32 j = 0;
-		const char *msg = CHAT_WordWrap(x+2, boxw-(charwidth*2), V_SNAPTOBOTTOM|V_SNAPTOLEFT|V_ALLOWLOWERCASE, chat_log[i]); // get the current message, and word wrap it.
+		char *msg = CHAT_WordWrap(x+2, boxw-(charwidth*2), V_SNAPTOBOTTOM|V_SNAPTOLEFT|V_ALLOWLOWERCASE, chat_log[i]); // get the current message, and word wrap it.
 		UINT8 *colormap = NULL;
 		while(msg[j]) // iterate through msg
 		{
@@ -1548,6 +1588,7 @@ static void HU_drawChatLog(INT32 offset)
 		}
 		dy += charheight;
 		dx = 0;
+		Z_Free(msg);
 	}
 
 
@@ -1951,7 +1992,6 @@ static void HU_DrawCEcho(void)
 		echoptr++;
 	}
 
-	--cechotimer;
 }
 
 static void HU_drawGametype(void)
@@ -2009,9 +2049,6 @@ void HU_Drawer(void)
 	// draw chat string plus cursor
 	if (chat_on)
 	{
-		// count down the scroll timer.
-		if (chat_scrolltime > 0)
-			chat_scrolltime--;
 		if (!OLDCHAT)
 			HU_DrawChat();
 		else
@@ -2023,27 +2060,6 @@ void HU_Drawer(void)
 		chat_scrolltime = 0;
 		if (!OLDCHAT && cv_consolechat.value < 2 && netgame) // Don't display minimized chat if you set the mode to Window (Hidden)
 			HU_drawMiniChat(); // draw messages in a cool fashion.
-	}
-
-	if (netgame) // would handle that in hu_drawminichat, but it's actually kinda awkward when you're typing a lot of messages. (only handle that in netgames duh)
-	{
-		size_t i = 0;
-
-		// handle spam while we're at it:
-		for(; (i<MAXPLAYERS); i++)
-		{
-			if (stop_spamming[i] > 0)
-				stop_spamming[i]--;
-		}
-
-		// handle chat timers
-		for (i=0; (i<chat_nummsg_min); i++)
-		{
-			if (chat_timers[i] > 0)
-				chat_timers[i]--;
-			else
-				HU_removeChatText_Mini();
-		}
 	}
 #endif
 
@@ -2064,18 +2080,14 @@ void HU_Drawer(void)
 	{
 		if (netgame || multiplayer)
 		{
-#ifdef HAVE_BLUA
 			if (LUA_HudEnabled(hud_rankings))
-#endif
-			HU_DrawRankings();
+				HU_DrawRankings();
 			if (gametype == GT_COOP)
 				HU_DrawNetplayCoopOverlay();
 		}
 		else
 			HU_DrawCoopOverlay();
-#ifdef HAVE_BLUA
 		LUAh_ScoresHUD();
-#endif
 	}
 
 	if (gamestate != GS_LEVEL)
@@ -2091,12 +2103,9 @@ void HU_Drawer(void)
 	// draw desynch text
 	if (hu_resynching)
 	{
-		static UINT32 resynch_ticker = 0;
 		char resynch_text[14];
 		UINT32 i;
 
-		// Animate the dots
-		resynch_ticker++;
 		strcpy(resynch_text, "Resynching");
 		for (i = 0; i < (resynch_ticker / 16) % 4; i++)
 			strcat(resynch_text, ".");
@@ -2182,13 +2191,14 @@ void HU_Erase(void)
 //
 // HU_drawPing
 //
-void HU_drawPing(INT32 x, INT32 y, INT32 ping, boolean notext)
+void HU_drawPing(INT32 x, INT32 y, UINT32 ping, boolean notext, INT32 flags)
 {
 	UINT8 numbars = 1; // how many ping bars do we draw?
 	UINT8 barcolor = 128; // color we use for the bars (green, yellow or red)
 	SINT8 i = 0;
 	SINT8 yoffset = 6;
-	INT32 dx = x+1 - (V_SmallStringWidth(va("%dms", ping), V_ALLOWLOWERCASE)/2);
+	INT32 dx = x+1 - (V_SmallStringWidth(va("%dms", ping),
+				V_ALLOWLOWERCASE|flags)/2);
 
 	if (ping < 128)
 	{
@@ -2202,13 +2212,13 @@ void HU_drawPing(INT32 x, INT32 y, INT32 ping, boolean notext)
 	}
 
 	if (!notext || vid.width >= 640) // how sad, we're using a shit resolution.
-		V_DrawSmallString(dx, y+4, V_ALLOWLOWERCASE, va("%dms", ping));
+		V_DrawSmallString(dx, y+4, V_ALLOWLOWERCASE|flags, va("%dms", ping));
 
 	for (i=0; (i<3); i++) // Draw the ping bar
 	{
-		V_DrawFill(x+2 *(i-1), y+yoffset-4, 2, 8-yoffset, 31);
+		V_DrawFill(x+2 *(i-1), y+yoffset-4, 2, 8-yoffset, 31|flags);
 		if (i < numbars)
-			V_DrawFill(x+2 *(i-1), y+yoffset-3, 1, 8-yoffset-1, barcolor);
+			V_DrawFill(x+2 *(i-1), y+yoffset-3, 1, 8-yoffset-1, barcolor|flags);
 
 		yoffset -= 2;
 	}
@@ -2235,7 +2245,7 @@ void HU_DrawTabRankings(INT32 x, INT32 y, playersort_t *tab, INT32 scorelines, I
 		if (!splitscreen) // don't draw it on splitscreen,
 		{
 			if (!(tab[i].num == serverplayer))
-				HU_drawPing(x+ 253, y+2, playerpingtable[tab[i].num], false);
+				HU_drawPing(x+ 253, y+2, playerpingtable[tab[i].num], false, 0);
 			//else
 			//	V_DrawSmallString(x+ 246, y+4, V_YELLOWMAP, "SERVER");
 		}
@@ -2416,7 +2426,7 @@ static void HU_Draw32TeamTabRankings(playersort_t *tab, INT32 whiteplayer)
 		if (!splitscreen)
 		{
 			if (!(tab[i].num == serverplayer))
-				HU_drawPing(x+ 135, y+3, playerpingtable[tab[i].num], true);
+				HU_drawPing(x+ 135, y+3, playerpingtable[tab[i].num], true, 0);
 		//else
 			//V_DrawSmallString(x+ 129, y+4, V_YELLOWMAP, "HOST");
 		}
@@ -2534,7 +2544,7 @@ void HU_DrawTeamTabRankings(playersort_t *tab, INT32 whiteplayer)
 		if (!splitscreen)
 		{
 			if (!(tab[i].num == serverplayer))
-				HU_drawPing(x+ 113, y+2, playerpingtable[tab[i].num], false);
+				HU_drawPing(x+ 113, y+2, playerpingtable[tab[i].num], false, 0);
 		//else
 		//	V_DrawSmallString(x+ 94, y+4, V_YELLOWMAP, "SERVER");
 		}
@@ -2561,7 +2571,7 @@ void HU_DrawDualTabRankings(INT32 x, INT32 y, playersort_t *tab, INT32 scoreline
 
 		strlcpy(name, tab[i].name, 7);
 		if (!(tab[i].num == serverplayer))
-			HU_drawPing(x+ 113, y+2, playerpingtable[tab[i].num], false);
+			HU_drawPing(x+ 113, y+2, playerpingtable[tab[i].num], false, 0);
 		//else
 		//	V_DrawSmallString(x+ 94, y+4, V_YELLOWMAP, "SERVER");
 
@@ -2660,7 +2670,7 @@ static void HU_Draw32TabRankings(INT32 x, INT32 y, playersort_t *tab, INT32 scor
 		if (!splitscreen) // don't draw it on splitscreen,
 		{
 			if (!(tab[i].num == serverplayer))
-				HU_drawPing(x+ 135, y+3, playerpingtable[tab[i].num], true);
+				HU_drawPing(x+ 135, y+3, playerpingtable[tab[i].num], true, 0);
 		//else
 		//	V_DrawSmallString(x+ 129, y+4, V_YELLOWMAP, "HOST");
 		}
@@ -3005,29 +3015,23 @@ static void HU_DrawRankings(void)
 
 static void HU_DrawCoopOverlay(void)
 {
-	if (token
-#ifdef HAVE_BLUA
-	&& LUA_HudEnabled(hud_tokens)
-#endif
-	)
+	if (token && LUA_HudEnabled(hud_tokens))
 	{
 		V_DrawString(168, 176, 0, va("- %d", token));
 		V_DrawSmallScaledPatch(148, 172, 0, tokenicon);
 	}
 
-#ifdef HAVE_BLUA
 	if (LUA_HudEnabled(hud_tabemblems))
-#endif
-	if (!modifiedgame || savemoddata)
 	{
-		V_DrawString(160, 144, 0, va("- %d/%d", M_CountEmblems(), numemblems+numextraemblems));
-		V_DrawScaledPatch(128, 144 - SHORT(emblemicon->height)/4, 0, emblemicon);
+		if (!modifiedgame || savemoddata)
+		{
+			V_DrawString(160, 144, 0, va("- %d/%d", M_CountEmblems(), numemblems+numextraemblems));
+			V_DrawScaledPatch(128, 144 - SHORT(emblemicon->height)/4, 0, emblemicon);
+		}
 	}
 
-#ifdef HAVE_BLUA
 	if (!LUA_HudEnabled(hud_coopemeralds))
 		return;
-#endif
 
 	if (emeralds & EMERALD1)
 		V_DrawScaledPatch((BASEVIDWIDTH/2)-8   , (BASEVIDHEIGHT/3)-32, 0, emeraldpics[0]);
@@ -3049,10 +3053,8 @@ static void HU_DrawNetplayCoopOverlay(void)
 {
 	int i;
 
-#ifdef HAVE_BLUA
 	if (!LUA_HudEnabled(hud_coopemeralds))
 		return;
-#endif
 
 	for (i = 0; i < 7; ++i)
 	{

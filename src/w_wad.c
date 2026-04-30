@@ -41,6 +41,7 @@
 #include "dehacked.h"
 #include "d_clisrv.h"
 #include "r_defs.h"
+#include "i_time.h"
 #include "i_system.h"
 #include "md5.h"
 #include "lua_script.h"
@@ -191,7 +192,6 @@ FILE *W_OpenWadFile(const char **filename, boolean useerrors)
 static inline void W_LoadDehackedLumpsPK3(UINT16 wadnum)
 {
 	UINT16 posStart, posEnd;
-#ifdef HAVE_BLUA
 	posStart = W_CheckNumForFolderStartPK3("Lua/", wadnum, 0);
 	if (posStart != INT16_MAX)
 	{
@@ -200,7 +200,6 @@ static inline void W_LoadDehackedLumpsPK3(UINT16 wadnum)
 		for (; posStart < posEnd; posStart++)
 			LUA_LoadLump(wadnum, posStart);
 	}
-#endif
 	posStart = W_CheckNumForFolderStartPK3("SOC/", wadnum, 0);
 	if (posStart != INT16_MAX)
 	{
@@ -226,7 +225,6 @@ static inline void W_LoadDehackedLumps(UINT16 wadnum)
 {
 	UINT16 lump;
 
-#ifdef HAVE_BLUA
 	// Find Lua scripts before SOCs to allow new A_Actions in SOC editing.
 	{
 		lumpinfo_t *lump_p = wadfiles[wadnum]->lumpinfo;
@@ -234,7 +232,6 @@ static inline void W_LoadDehackedLumps(UINT16 wadnum)
 			if (memcmp(lump_p->name,"LUA_",4)==0)
 				LUA_LoadLump(wadnum, lump);
 	}
-#endif
 
 	{
 		lumpinfo_t *lump_p = wadfiles[wadnum]->lumpinfo;
@@ -734,11 +731,9 @@ UINT16 W_InitFile(const char *filename)
 	case RET_SOC:
 		lumpinfo = ResGetLumpsStandalone(handle, &numlumps, "OBJCTCFG");
 		break;
-#ifdef HAVE_BLUA
 	case RET_LUA:
 		lumpinfo = ResGetLumpsStandalone(handle, &numlumps, "LUA_INIT");
 		break;
-#endif
 	case RET_PK3:
 		lumpinfo = ResGetLumpsZip(handle, &numlumps);
 		break;
@@ -801,11 +796,9 @@ UINT16 W_InitFile(const char *filename)
 		CONS_Printf(M_GetText("Loading SOC from %s\n"), wadfile->filename);
 		DEH_LoadDehackedLumpPwad(numwadfiles - 1, 0);
 		break;
-#ifdef HAVE_BLUA
 	case RET_LUA:
 		LUA_LoadLump(numwadfiles - 1, 0);
 		break;
-#endif
 	default:
 		break;
 	}
@@ -1632,12 +1625,12 @@ void W_VerifyFileMD5(UINT16 wadfilenum, const char *matchmd5)
 	{
 		char actualmd5text[2*MD5_LEN+1];
 		PrintMD5String(wadfiles[wadfilenum]->md5sum, actualmd5text);
-#ifdef _DEBUG
+/*#ifdef _DEBUG
 		CONS_Printf
 #else
 		I_Error
 #endif
-			(M_GetText("File is corrupt or has been modified: %s (found md5: %s, wanted: %s)\n"), wadfiles[wadfilenum]->filename, actualmd5text, matchmd5);
+			(M_GetText("File is corrupt or has been modified: %s (found md5: %s, wanted: %s)\n"), wadfiles[wadfilenum]->filename, actualmd5text, matchmd5);*/
 	}
 #endif
 }
@@ -1659,9 +1652,7 @@ static int W_VerifyFile(const char *filename, lumpchecklist_t *checklist,
 
 	// detect wad file by the absence of the other supported extensions
 	if (stricmp(&filename[strlen(filename) - 4], ".soc")
-#ifdef HAVE_BLUA
 	&& stricmp(&filename[strlen(filename) - 4], ".lua")
-#endif
 	&& stricmp(&filename[strlen(filename) - 4], ".pk3"))
 	{
 		// assume wad file
@@ -1761,6 +1752,10 @@ int W_VerifyNMUSlumps(const char *filename)
 		{"RRINGS", 6}, // Rings HUD (not named as SBO)
 		{"YB_", 3}, // Intermission graphics, goes with the above
 		{"M_", 2}, // As does menu stuff
+		#ifdef HWRENDER
+		{"SHADERS", 7},
+		{"SH_", 3},
+		#endif
 
 		{NULL, 0},
 	};

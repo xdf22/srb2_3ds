@@ -1025,6 +1025,8 @@ const char *VID_GetModeName(INT32 modenum)
 	return NULL;
 }
 
+UINT32 I_GetRefreshRate(void) { return 35; } // hardware isnt interpolated for 35+ fps on 3DS
+
 void I_UpdateNoBlit(void){}
 
 void I_FinishUpdate(void)

@@ -15,6 +15,10 @@
 #ifndef __DOOMDEF__
 #define __DOOMDEF__
 
+
+// OpenGL Lighting Features:
+//#define ALAM_LIGHTING // TODO make it work properly with shaders
+
 // Sound system select
 // This should actually be in the makefile,
 // but I can't stand that gibberish. D:
@@ -138,6 +142,7 @@
 
 #ifdef LOGMESSAGES
 extern FILE *logstream;
+extern char logfilename[1024];
 #endif
 
 //#define DEVELOP // Disable this for release builds to remove excessive cheat commands and enable MD5 checking and stuff, all in one go. :3
@@ -150,10 +155,10 @@ extern FILE *logstream;
 // we use comprevision and compbranch instead.
 #else
 #define VERSION    201 // Game version
-#define SUBVERSION 27  // more precise version number
+#define SUBVERSION 28  // more precise version number
 #define SUBVERSION_NETCOMPAT 25  // for backwards compatibility with 2.1.25 servers
-#define VERSIONSTRING "v2.1.27"
-#define VERSIONSTRINGW L"v2.1.27"
+#define VERSIONSTRING "v2.1.28"
+#define VERSIONSTRINGW L"v2.1.28"
 // Hey! If you change this, add 1 to the MODVERSION below!
 // Otherwise we can't force updates!
 #endif
@@ -173,11 +178,15 @@ extern FILE *logstream;
 // Comment out this line to completely disable update alerts (recommended for testing, but not for release)
 #define UPDATE_ALERT
 
+// If you maintain a fork of srb2-legacy, change this.
+#define RELEASES "github.com/P-AS/srb2-legacy/releases\n"
+
 // The string used in the alert that pops up in the event of an update being available.
 // Please change to apply to your modification (we don't want everyone asking where your mod is on SRB2.org!).
 #define UPDATE_ALERT_STRING \
-"A new update is available for SRB2.\n"\
-"Please visit SRB2.org to download it.\n"\
+"A new update is available for SRB2 Legacy.\n"\
+"You can grab the latest release from:\n"\
+RELEASES \
 "\n"\
 "You are using version: %s\n"\
 "The newest version is: %s\n"\
@@ -193,8 +202,9 @@ extern FILE *logstream;
 // The string used in the I_Error alert upon trying to host through command line parameters.
 // Generally less filled with newlines, since Windows gives you lots more room to work with.
 #define UPDATE_ALERT_STRING_CONSOLE \
-"A new update is available for SRB2.\n"\
-"Please visit SRB2.org to download it.\n"\
+"A new update is available for SRB2 Legacy.\n"\
+"You can grab the latest release from:\n"\
+RELEASES \
 "\n"\
 "You are using version: %s\n"\
 "The newest version is: %s\n"\
@@ -218,7 +228,7 @@ extern FILE *logstream;
 // it's only for detection of the version the player is using so the MS can alert them of an update.
 // Only set it higher, not lower, obviously.
 // Note that we use this to help keep internal testing in check; this is why v2.1.0 is not version "1".
-#define MODVERSION 32
+#define MODVERSION 33
 
 // To version config.cfg, MAJOREXECVERSION is set equal to MODVERSION automatically.
 // Increment MINOREXECVERSION whenever a config change is needed that does not correspond
@@ -465,11 +475,11 @@ extern const char *compdate, *comptime, *comprevision, *compbranch;
 /// Kalaron/Eternity Engine slope code (SRB2CB ported)
 #define ESLOPE
 
-#ifdef ESLOPE
+
 /// Backwards compatibility with SRB2CB's slope linedef types.
 ///	\note	A simple shim that prints a warning.
 #define ESLOPE_TYPESHIM
-#endif
+
 
 ///	Delete file while the game is running.
 ///	\note	EXTREMELY buggy, tends to crash game.
@@ -532,11 +542,21 @@ extern const char *compdate, *comptime, *comprevision, *compbranch;
 /// \note   Required for proper collision with moving sloped surfaces that have sector specials on them.
 //#define SECTORSPECIALSAFTERTHINK
 
+
 /// FINALLY some real clipping that doesn't make walls dissappear AND speeds the game up
 /// (that was the original comment from SRB2CB, sadly it is a lie and actually slows game down)
 /// on the bright side it fixes some weird issues with translucent walls
 /// \note	SRB2CB port.
 ///      	SRB2CB itself ported this from PrBoom+
 #define NEWCLIP
+
+
+
+/// Hardware renderer: OpenGL
+//#define GL_SHADERS
+
+// WARNING: a should be unsigned but to add with 2048, it isn't!
+#define AIMINGTODY(a) (FINETANGENT((2048+(((INT32)a)>>ANGLETOFINESHIFT)) & FINEMASK)*160)
+
 
 #endif // __DOOMDEF__

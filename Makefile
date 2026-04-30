@@ -70,7 +70,7 @@ CXXFLAGS	:= $(CFLAGS) -fno-rtti -fno-exceptions -std=gnu++11
 ASFLAGS	:=	-g $(ARCH)
 LDFLAGS	=	-specs=3dsx.specs -g $(ARCH) -Wl,-Map,$(notdir $*.map) -z muldefs
 
-LIBS	:= -lSDL_mixer -lmikmod -lmad -lvorbisidec -logg -lSDL -lcitro3d -lctru -lm -lz
+LIBS	:= -lSDL_mixer -lmikmod -lmad -lvorbisidec -logg -lSDL2 -lcitro3d -lctru -lm -lz
 
 #---------------------------------------------------------------------------------
 # list of directories containing libraries, this must be the top level containing
@@ -93,6 +93,7 @@ export VPATH	:=	$(foreach dir,$(SOURCES),$(CURDIR)/$(dir))
 export DEPSDIR	:=	$(CURDIR)/$(BUILD)
 
 CFILES		:=	i_main.o \
+				i_time.o \
 				comptime.o \
 				string.o   \
 				d_main.o   \
@@ -145,6 +146,7 @@ CFILES		:=	i_main.o \
 				r_bsp.o    \
 				r_data.o   \
 				r_draw.o   \
+				r_fps.o    \
 				r_main.o   \
 				r_plane.o  \
 				r_segs.o   \

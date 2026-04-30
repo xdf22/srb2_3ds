@@ -1236,7 +1236,6 @@ INT32 P_FindSpecialLineFromTag(INT16 special, INT16 tag, INT32 start)
 }
 
 // haleyjd: temporary define
-#ifdef POLYOBJECTS
 
 //
 // PolyDoor
@@ -1445,7 +1444,6 @@ static boolean PolyDisplace(line_t *line)
 	return EV_DoPolyObjDisplace(&pdd);
 }
 
-#endif // ifdef POLYOBJECTS
 
 /** Changes a sector's tag.
   * Used by the linedef executor tag changer and by crumblers.
@@ -2364,7 +2362,7 @@ static void P_ProcessLineSpecial(line_t *line, mobj_t *mo, sector_t *callsec)
 					if (mo->player)
 					{
 						if (bot) // This might put poor Tails in a wall if he's too far behind! D: But okay, whatever! >:3
-							P_TeleportMove(bot, bot->x + x, bot->y + y, bot->z + z);
+							P_SetOrigin(bot, bot->x + x, bot->y + y, bot->z + z);
 						if (splitscreen && mo->player == &players[secondarydisplayplayer] && camera2.chase)
 						{
 							camera2.x += x;
@@ -2825,7 +2823,7 @@ static void P_ProcessLineSpecial(line_t *line, mobj_t *mo, sector_t *callsec)
 				// Reset bot too.
 				if (bot) {
 					if (line->flags & ML_NOCLIMB)
-						P_TeleportMove(bot, mo->x, mo->y, mo->z);
+						P_SetOrigin(bot, mo->x, mo->y, mo->z);
 					bot->momx = bot->momy = bot->momz = 1;
 					bot->pmomz = 0;
 					bot->player->rmomx = bot->player->rmomy = 1;
@@ -2869,7 +2867,7 @@ static void P_ProcessLineSpecial(line_t *line, mobj_t *mo, sector_t *callsec)
 				// (Teleport them to you so they don't break it.)
 				if (bot && (bot->flags2 & MF2_TWOD) != (mo->flags2 & MF2_TWOD)) {
 					bot->flags2 = (bot->flags2 & ~MF2_TWOD) | (mo->flags2 & MF2_TWOD);
-					P_TeleportMove(bot, mo->x, mo->y, mo->z);
+					P_SetOrigin(bot, mo->x, mo->y, mo->z);
 				}
 			}
 			break;
@@ -3087,14 +3085,10 @@ static void P_ProcessLineSpecial(line_t *line, mobj_t *mo, sector_t *callsec)
 		}
 
 		case 443: // Calls a named Lua function
-#ifdef HAVE_BLUA
 			if (line->text)
 				LUAh_LinedefExecute(line, mo, callsec);
 			else
 				CONS_Alert(CONS_WARNING, "Linedef %s is missing the hook name of the Lua function to call! (This should be given in the front texture fields)\n", sizeu1(line-lines));
-#else
-			CONS_Alert(CONS_ERROR, "The map is trying to run a Lua script, but this exe was not compiled with Lua support!\n");
-#endif
 			break;
 
 		case 444: // Earthquake camera
@@ -3177,7 +3171,7 @@ static void P_ProcessLineSpecial(line_t *line, mobj_t *mo, sector_t *callsec)
 			break;
 		}
 
-#ifdef POLYOBJECTS
+
 		case 480: // Polyobj_DoorSlide
 		case 481: // Polyobj_DoorSwing
 			PolyDoor(line);
@@ -3204,7 +3198,7 @@ static void P_ProcessLineSpecial(line_t *line, mobj_t *mo, sector_t *callsec)
 		case 491:
 			PolyTranslucency(line);
 			break;
-#endif
+
 
 		default:
 			break;
@@ -4821,10 +4815,10 @@ void P_UpdateSpecials(void)
 	// POINT LIMIT
 	P_CheckPointLimit();
 
-#ifdef ESLOPE
+
 	// Dynamic slopeness
 	P_RunDynamicSlopes();
-#endif
+
 
 	// ANIMATE TEXTURES
 	for (anim = anims; anim < lastanim; anim++)
@@ -4928,8 +4922,8 @@ static ffloor_t *P_AddFakeFloor(sector_t *sec, sector_t *sec2, line_t *master, f
 
 	if (sec2->numattached == 0)
 	{
-		sec2->attached = Z_Malloc(sizeof (*sec2->attached) * sec2->maxattached, PU_STATIC, NULL);
-		sec2->attachedsolid = Z_Malloc(sizeof (*sec2->attachedsolid) * sec2->maxattached, PU_STATIC, NULL);
+		sec2->attached = Z_Malloc(sizeof (*sec2->attached) * sec2->maxattached, PU_LEVEL, NULL);
+		sec2->attachedsolid = Z_Malloc(sizeof (*sec2->attachedsolid) * sec2->maxattached, PU_LEVEL, NULL);
 		sec2->attached[0] = sec - sectors;
 		sec2->numattached = 1;
 		sec2->attachedsolid[0] = (flags & FF_SOLID);
@@ -4943,8 +4937,8 @@ static ffloor_t *P_AddFakeFloor(sector_t *sec, sector_t *sec2, line_t *master, f
 		if (sec2->numattached >= sec2->maxattached)
 		{
 			sec2->maxattached *= 2;
-			sec2->attached = Z_Realloc(sec2->attached, sizeof (*sec2->attached) * sec2->maxattached, PU_STATIC, NULL);
-			sec2->attachedsolid = Z_Realloc(sec2->attachedsolid, sizeof (*sec2->attachedsolid) * sec2->maxattached, PU_STATIC, NULL);
+			sec2->attached = Z_Realloc(sec2->attached, sizeof (*sec2->attached) * sec2->maxattached, PU_LEVEL, NULL);
+			sec2->attachedsolid = Z_Realloc(sec2->attachedsolid, sizeof (*sec2->attachedsolid) * sec2->maxattached, PU_LEVEL, NULL);
 		}
 		sec2->attached[sec2->numattached] = sec - sectors;
 		sec2->attachedsolid[sec2->numattached] = (flags & FF_SOLID);
@@ -4969,7 +4963,7 @@ static ffloor_t *P_AddFakeFloor(sector_t *sec, sector_t *sec2, line_t *master, f
 	ffloor->topyoffs = &sec2->ceiling_yoffs;
 	ffloor->topangle = &sec2->ceilingpic_angle;
 
-#ifdef ESLOPE
+
 	// Add slopes
 	ffloor->t_slope = &sec2->c_slope;
 	ffloor->b_slope = &sec2->f_slope;
@@ -4977,7 +4971,7 @@ static ffloor_t *P_AddFakeFloor(sector_t *sec, sector_t *sec2, line_t *master, f
 	// (this fixes FOF slopes glitching initially at level load in software mode)
 	if (sec2->hasslope)
 		sec->hasslope = true;
-#endif
+
 
 	if ((flags & FF_SOLID) && (master->flags & ML_EFFECT1)) // Block player only
 		flags &= ~FF_BLOCKOTHERS;
@@ -5126,7 +5120,12 @@ static void P_AddFloatThinker(sector_t *sec, INT32 tag, line_t *sourceline)
 	floater->sector = sec;
 	floater->vars[0] = tag;
 	floater->sourceline = sourceline;
+
+	// interpolation
+	R_CreateInterpolator_SectorPlane(&floater->thinker, sec, false);
+	R_CreateInterpolator_SectorPlane(&floater->thinker, sec, true);
 }
+
 
 /** Adds a bridge thinker.
   * Bridge thinkers cause a group of FOFs to behave like
@@ -5237,7 +5236,13 @@ static void P_AddRaiseThinker(sector_t *sec, line_t *sourceline)
 		- (sec->ceilingheight - sec->floorheight);
 
 	raise->sourceline = sourceline;
+
+	// interpolation
+	R_CreateInterpolator_SectorPlane(&raise->thinker, sec, false);
+	R_CreateInterpolator_SectorPlane(&raise->thinker, sec, true);
 }
+
+
 
 // Function to maintain backwards compatibility
 static void P_AddOldAirbob(sector_t *sec, line_t *sourceline, boolean noadjust)
@@ -5279,7 +5284,12 @@ static void P_AddOldAirbob(sector_t *sec, line_t *sourceline, boolean noadjust)
 			- (sec->ceilingheight - sec->floorheight);
 
 	airbob->sourceline = sourceline;
+
+	// interpolation
+	R_CreateInterpolator_SectorPlane(&airbob->thinker, sec, false);
+	R_CreateInterpolator_SectorPlane(&airbob->thinker, sec, true);
 }
+
 
 /** Adds a thwomp thinker.
   * Even thwomps need to think!
@@ -5320,6 +5330,11 @@ static inline void P_AddThwompThinker(sector_t *sec, sector_t *actionsector, lin
 	thwomp->sourceline = sourceline;
 	thwomp->sector->floordata = thwomp;
 	thwomp->sector->ceilingdata = thwomp;
+
+	// interpolation
+	R_CreateInterpolator_SectorPlane(&thwomp->thinker, sec, false);
+	R_CreateInterpolator_SectorPlane(&thwomp->thinker, sec, true);
+
 	return;
 #undef speed
 #undef direction
@@ -5327,6 +5342,8 @@ static inline void P_AddThwompThinker(sector_t *sec, sector_t *actionsector, lin
 #undef floorwasheight
 #undef ceilingwasheight
 }
+
+
 
 /** Adds a thinker which checks if any MF_ENEMY objects with health are in the defined area.
   * If not, a linedef executor is run once.
@@ -5424,15 +5441,13 @@ void T_LaserFlash(laserthink_t *flash)
 
 	sourcesec = ffloor->master->frontsector; // Less to type!
 
-#ifdef ESLOPE
+
 	top = (*ffloor->t_slope) ? P_GetZAt(*ffloor->t_slope, sector->soundorg.x, sector->soundorg.y)
 			: *ffloor->topheight;
 	bottom = (*ffloor->b_slope) ? P_GetZAt(*ffloor->b_slope, sector->soundorg.x, sector->soundorg.y)
 			: *ffloor->bottomheight;
 	sector->soundorg.z = (top + bottom)/2;
-#else
-	sector->soundorg.z = (*ffloor->topheight + *ffloor->bottomheight)/2;
-#endif
+
 	S_StartSound(&sector->soundorg, sfx_laser);
 
 	// Seek out objects to DESTROY! MUAHAHHAHAHAA!!!*cough*
@@ -6521,13 +6536,13 @@ void P_SpawnSpecials(INT32 fromnetsave)
 					sectors[s].midmap = lines[i].frontsector->midmap;
 				break;
 
-#ifdef ESLOPE // Slope copy specials. Handled here for sanity.
+			 // Slope copy specials. Handled here for sanity.
 			case 720:
 			case 721:
 			case 722:
 				P_CopySectorSlope(&lines[i]);
 				break;
-#endif
+
 
 			default:
 				break;
@@ -6541,7 +6556,7 @@ void P_SpawnSpecials(INT32 fromnetsave)
 
 	Z_Free(secthinkers);
 
-#ifdef POLYOBJECTS
+
 	// haleyjd 02/20/06: spawn polyobjects
 	Polyobj_InitLevel();
 
@@ -6558,7 +6573,6 @@ void P_SpawnSpecials(INT32 fromnetsave)
 				break;
 		}
 	}
-#endif
 
 	P_RunLevelLoadExecutors();
 }
@@ -6885,6 +6899,23 @@ static void Add_Scroller(INT32 type, fixed_t dx, fixed_t dy, INT32 control, INT3
 		s->last_height = sectors[control].floorheight + sectors[control].ceilingheight;
 	s->affectee = affectee;
 	P_AddThinker(&s->thinker);
+
+	// interpolation
+	switch (type)
+	{
+		case sc_side:
+		    R_CreateInterpolator_SideScroll(&s->thinker, &sides[affectee]);
+			break;
+		case sc_floor:
+			R_CreateInterpolator_SectorScroll(&s->thinker, &sectors[affectee], false);
+			break;
+		case sc_ceiling:
+			R_CreateInterpolator_SectorScroll(&s->thinker, &sectors[affectee], true);
+			break;
+		default:
+			break;
+	}
+
 }
 
 /** Adds a wall scroller.
@@ -7079,11 +7110,9 @@ void T_Disappear(disappear_t *d)
 
 					if (!(lines[d->sourceline].flags & ML_NOCLIMB))
 					{
-#ifdef ESLOPE
 						if (*rover->t_slope)
 							sectors[s].soundorg.z = P_GetZAt(*rover->t_slope, sectors[s].soundorg.x, sectors[s].soundorg.y);
 						else
-#endif
 						sectors[s].soundorg.z = *rover->topheight;
 						S_StartSound(&sectors[s].soundorg, sfx_appear);
 					}

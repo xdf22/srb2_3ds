@@ -11,12 +11,9 @@
 /// \brief basic functions for Lua scripting
 
 #include "doomdef.h"
-#ifdef HAVE_BLUA
 #include "p_local.h"
 #include "p_setup.h" // So we can have P_SetupLevelSky
-#ifdef ESLOPE
 #include "p_slopes.h" // P_GetZAt
-#endif
 #include "z_zone.h"
 #include "r_main.h"
 #include "r_things.h"
@@ -1062,11 +1059,48 @@ static int lib_pTeleportMove(lua_State *L)
 	NOHUD
 	if (!thing)
 		return LUA_ErrInvalid(L, "mobj_t");
-	lua_pushboolean(L, P_TeleportMove(thing, x, y, z));
+	//LUA_Deprecated(L, "P_TeleportMove", "P_SetOrigin\" or \"P_MoveOrigin"); Who the fuck is updating their 2.1 lua scripts to use P_SetOrigin/MoveOrigin
+	lua_pushboolean(L, P_MoveOrigin(thing, x, y, z));
 	LUA_PushUserdata(L, tmthing, META_MOBJ);
 	P_SetTarget(&tmthing, ptmthing);
 	return 2;
 }
+
+static int lib_pSetOrigin(lua_State *L)
+{
+	mobj_t *ptmthing = tmthing;
+	mobj_t *thing = *((mobj_t **)luaL_checkudata(L, 1, META_MOBJ));
+	fixed_t x = luaL_checkfixed(L, 2);
+	fixed_t y = luaL_checkfixed(L, 3);
+	fixed_t z = luaL_checkfixed(L, 4);
+	NOHUD
+	if (!thing)
+		return LUA_ErrInvalid(L, "mobj_t");
+	lua_pushboolean(L, P_SetOrigin(thing, x, y, z));
+	LUA_PushUserdata(L, tmthing, META_MOBJ);
+	P_SetTarget(&tmthing, ptmthing);
+	return 2;
+}
+
+
+
+static int lib_pMoveOrigin(lua_State *L)
+{
+	mobj_t *ptmthing = tmthing;
+	mobj_t *thing = *((mobj_t **)luaL_checkudata(L, 1, META_MOBJ));
+	fixed_t x = luaL_checkfixed(L, 2);
+	fixed_t y = luaL_checkfixed(L, 3);
+	fixed_t z = luaL_checkfixed(L, 4);
+	NOHUD
+	if (!thing)
+		return LUA_ErrInvalid(L, "mobj_t");
+	lua_pushboolean(L, P_MoveOrigin(thing, x, y, z));
+	LUA_PushUserdata(L, tmthing, META_MOBJ);
+	P_SetTarget(&tmthing, ptmthing);
+	return 2;
+}
+
+
 
 static int lib_pSlideMove(lua_State *L)
 {
@@ -1609,7 +1643,7 @@ static int lib_evCrumbleChain(lua_State *L)
 	return 0;
 }
 
-#ifdef ESLOPE
+
 // P_SLOPES
 ////////////
 
@@ -1625,7 +1659,6 @@ static int lib_pGetZAt(lua_State *L)
 	lua_pushfixed(L, P_GetZAt(slope, x, y));
 	return 1;
 }
-#endif
 
 // R_DEFS
 ////////////
@@ -2300,6 +2333,8 @@ static luaL_Reg lib[] = {
 	{"P_TryMove",lib_pTryMove},
 	{"P_Move",lib_pMove},
 	{"P_TeleportMove",lib_pTeleportMove},
+	{"P_SetOrigin",lib_pSetOrigin},
+	{"P_MoveOrigin",lib_pMoveOrigin},
 	{"P_SlideMove",lib_pSlideMove},
 	{"P_BounceMove",lib_pBounceMove},
 	{"P_CheckSight", lib_pCheckSight},
@@ -2342,10 +2377,10 @@ static luaL_Reg lib[] = {
 	{"P_StartQuake",lib_pStartQuake},
 	{"EV_CrumbleChain",lib_evCrumbleChain},
 
-#ifdef ESLOPE
+
 	// p_slopes
 	{"P_GetZAt",lib_pGetZAt},
-#endif
+
 
 	// r_defs
 	{"R_PointToAngle",lib_rPointToAngle},
@@ -2416,5 +2451,3 @@ int LUA_BaseLib(lua_State *L)
 	luaL_register(L, NULL, lib);
 	return 0;
 }
-
-#endif

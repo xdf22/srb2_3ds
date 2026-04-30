@@ -14,6 +14,9 @@
 ///        according to adjacent sectors, respective
 ///        utility functions, etc.
 
+#include "m_fixed.h"
+#include "d_player.h"
+#include "r_defs.h"
 #ifndef __P_SPEC__
 #define __P_SPEC__
 

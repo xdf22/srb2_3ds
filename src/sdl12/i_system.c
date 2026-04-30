@@ -2189,6 +2189,13 @@ tic_t I_GetTime (void)
 }
 #endif
 
+fixed_t I_GetTimeFrac(void)
+{
+
+  return 0;
+}
+
+
 //
 //I_StartupTimer
 //

@@ -19,7 +19,6 @@
 #include "r_defs.h"
 
 // haleyjd: temporary define
-#ifdef POLYOBJECTS
 //
 // Defines
 //
@@ -104,6 +103,7 @@ typedef struct polyobj_s
 
 	// these are saved for netgames, so do not let Lua touch these!
 	INT32 spawnflags; // Flags the polyobject originally spawned with
+
 } polyobj_t;
 
 //
@@ -303,7 +303,6 @@ extern polyobj_t *PolyObjects;
 extern INT32 numPolyObjects;
 extern polymaplink_t **polyblocklinks; // polyobject blockmap
 
-#endif // ifdef POLYOBJECTS
 
 #endif
 

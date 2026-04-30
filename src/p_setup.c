@@ -21,6 +21,7 @@
 #include "p_spec.h"
 #include "p_saveg.h"
 
+#include "i_time.h"
 #include "i_sound.h" // for I_PlayCD()..
 #include "i_video.h" // for I_FinishUpdate()..
 #include "r_sky.h"
@@ -74,9 +75,8 @@
 #include "hardware/hw_light.h"
 #endif
 
-#ifdef ESLOPE
+
 #include "p_slopes.h"
-#endif
 
 //
 // Map MD5, calculated on level load.
@@ -990,9 +990,7 @@ static void P_LoadThings(void)
 
 		// Z for objects
 		mt->z = (INT16)(
-#ifdef ESLOPE
 				mtsector->f_slope ? P_GetZAt(mtsector->f_slope, mt->x << FRACBITS, mt->y << FRACBITS) :
-#endif
 				mtsector->floorheight)>>FRACBITS;
 
 		if (mt->type == 1700 // MT_AXIS
@@ -1260,9 +1258,7 @@ static void P_LoadRawLineDefs(UINT8 *data, size_t i)
 		if (ld->sidenum[1] != 0xffff && ld->special)
 			sides[ld->sidenum[1]].special = ld->special;
 
-#ifdef POLYOBJECTS
 		ld->polyobj = NULL;
-#endif
 	}
 }
 
@@ -1893,11 +1889,10 @@ static void P_CreateBlockMap(void)
 		blocklinks = Z_Calloc(count, PU_LEVEL, NULL);
 		blockmap = blockmaplump + 4;
 
-#ifdef POLYOBJECTS
+
 		// haleyjd 2/22/06: setup polyobject blockmap
 		count = sizeof(*polyblocklinks) * bmapwidth * bmapheight;
 		polyblocklinks = Z_Calloc(count, PU_LEVEL, NULL);
-#endif
 	}
 }
 
@@ -1970,11 +1965,10 @@ static boolean P_LoadBlockMap(lumpnum_t lumpnum)
 	blocklinks = Z_Calloc(count, PU_LEVEL, NULL);
 	blockmap = blockmaplump+4;
 
-#ifdef POLYOBJECTS
+
 	// haleyjd 2/22/06: setup polyobject blockmap
 	count = sizeof(*polyblocklinks) * bmapwidth * bmapheight;
 	polyblocklinks = Z_Calloc(count, PU_LEVEL, NULL);
-#endif
 	return true;
 /* Original
 		blockmaplump = W_CacheLumpNum(lump, PU_LEVEL);
@@ -2036,13 +2030,11 @@ static boolean P_LoadRawBlockMap(UINT8 *data, size_t count, const char *lumpname
 	blocklinks = Z_Calloc(count, PU_LEVEL, NULL);
 	blockmap = blockmaplump+4;
 
-#ifdef POLYOBJECTS
 	// haleyjd 2/22/06: setup polyobject blockmap
 	count = sizeof(*polyblocklinks) * bmapwidth * bmapheight;
 	polyblocklinks = Z_Calloc(count, PU_LEVEL, NULL);
 #endif
 	return true;
-#endif
 }
 
 //
@@ -2769,7 +2761,11 @@ boolean P_SetupLevel(boolean skipprecip)
 		{
 			// wait loop
 			while (!((nowtime = I_GetTime()) - lastwipetic))
-				I_Sleep();
+			{
+			I_Sleep(cv_sleep.value);
+			I_UpdateTime(cv_timescale.value);
+			}
+
 			lastwipetic = nowtime;
 			if (moviemode) // make sure we save frames for the white hold too
 				M_SaveFrame();
@@ -2811,9 +2807,7 @@ boolean P_SetupLevel(boolean skipprecip)
 		I_UpdateNoVsync();
 	}
 
-#ifdef HAVE_BLUA
 	LUA_InvalidateLevel();
-#endif
 
 	for (ss = sectors; sectors+numsectors != ss; ss++)
 	{
@@ -2831,7 +2825,10 @@ boolean P_SetupLevel(boolean skipprecip)
 	R_ClearLevelSplats();
 #endif
 
+	mobjcache = NULL;
+    R_InitializeLevelInterpolators();
 	P_InitThinkers();
+	R_InitMobjInterpolators();
 	P_InitCachedActions();
 
 	/// \note for not spawning precipitation, etc. when loading netgame snapshots
@@ -2857,6 +2854,8 @@ boolean P_SetupLevel(boolean skipprecip)
 	P_SetupLevelSky(mapheaderinfo[gamemap-1]->skynum, true);
 
 	P_MakeMapMD5(lastloadedmaplumpnum, &mapmd5);
+
+
 
 	// HACK ALERT: Cache the WAD, get the map data into the tables, free memory.
 	// As it is implemented right now, we're assuming an uncompressed WAD.
@@ -2946,9 +2945,8 @@ boolean P_SetupLevel(boolean skipprecip)
 		P_PrepareThings(lastloadedmaplumpnum + ML_THINGS);
 	}
 
-#ifdef ESLOPE
+
 	P_ResetDynamicSlopes();
-#endif
 
 	P_LoadThings();
 
@@ -3168,9 +3166,14 @@ boolean P_SetupLevel(boolean skipprecip)
 				G_CopyTiccmd(&players[i].cmd, &netcmds[buf][i], 1);
 		}
 		P_PreTicker(2);
-#ifdef HAVE_BLUA
 		LUAh_MapLoad();
-#endif
+	}
+
+	if (rendermode != render_none)
+	{
+		R_ResetViewInterpolation(0);
+		R_ResetViewInterpolation(0);
+		R_UpdateMobjInterpolators();
 	}
 
 	return true;

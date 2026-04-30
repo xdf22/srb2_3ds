@@ -21,9 +21,11 @@
 #include "m_random.h"
 #include "lua_script.h"
 #include "lua_hook.h"
-
+#include "r_fps.h"
 // Object place
 #include "m_cheat.h"
+#include "r_main.h"
+#include "i_video.h" // rendermode
 
 tic_t leveltime;
 
@@ -193,6 +195,8 @@ void P_AddThinker(thinker_t *thinker)
 	thinkercap.prev = thinker;
 
 	thinker->references = 0;    // killough 11/98: init reference counter to 0
+
+	thinker->cachable = (thinker->function.acp1 == (actionf_p1)P_MobjThinker);
 }
 
 //
@@ -227,7 +231,17 @@ void P_RemoveThinkerDelayed(void *pthinker)
 			 * thinker->prev->next = thinker->next */
 			(next->prev = currentthinker = thinker->prev)->next = next;
 		}
+		R_DestroyLevelInterpolators(thinker);
+	if (thinker->cachable == true)
+	{
+		// put cachable thinkers in the mobj cache, so we can avoid allocations
+		((mobj_t *)thinker)->hnext = mobjcache;
+		mobjcache = (mobj_t *)thinker;
+	}
+	else
+	{
 		Z_Free(thinker);
+	}
 	}
 }
 
@@ -245,9 +259,7 @@ void P_RemoveThinkerDelayed(void *pthinker)
 //
 void P_RemoveThinker(thinker_t *thinker)
 {
-#ifdef HAVE_BLUA
 	LUA_InvalidateUserdata(thinker);
-#endif
 	thinker->function.acp1 = P_RemoveThinkerDelayed;
 }
 
@@ -569,6 +581,7 @@ void P_Ticker(boolean run)
 {
 	INT32 i;
 
+
 	//Increment jointime even if paused.
 	for (i = 0; i < MAXPLAYERS; i++)
 		if (playeringame[i])
@@ -579,8 +592,10 @@ void P_Ticker(boolean run)
 		if (OP_FreezeObjectplace())
 		{
 			P_MapStart();
+			R_UpdateMobjInterpolators();
 			OP_ObjectplaceMovement(&players[0]);
 			P_MoveChaseCamera(&players[0], &camera, false);
+			R_UpdateViewInterpolation();
 			P_MapEnd();
 			return;
 		}
@@ -596,6 +611,7 @@ void P_Ticker(boolean run)
 
 	if (run)
 	{
+		R_UpdateMobjInterpolators();
 		if (demorecording)
 			G_WriteDemoTiccmd(&players[consoleplayer].cmd, 0);
 		if (demoplayback)
@@ -633,9 +649,7 @@ void P_Ticker(boolean run)
 			if (playeringame[i] && players[i].mo && !P_MobjWasRemoved(players[i].mo))
 				P_PlayerAfterThink(&players[i]);
 
-#ifdef HAVE_BLUA
 		LUAh_ThinkFrame();
-#endif
 	}
 
 	// Run shield positioning
@@ -706,7 +720,46 @@ void P_Ticker(boolean run)
 			G_GhostTicker();
 	}
 
+	if (run)
+	{
+		R_UpdateLevelInterpolators();
+		R_UpdateViewInterpolation();
+
+		// Hack: ensure newview is assigned every tic.
+		// Ensures view interpolation is T-1 to T in poor network conditions
+		// We need a better way to assign view state decoupled from game logic
+		if (rendermode != render_none)
+		{
+			player_t *player1 = &players[displayplayer];
+			if (player1->mo && skyboxmo[0] && cv_skybox.value)
+			{
+				R_SkyboxFrame(player1);
+			}
+
+			if (player1->mo)
+			{
+				R_SetupFrame(player1, (skyboxmo[0] && cv_skybox.value));
+			}
+
+			if (splitscreen)
+			{
+				player_t *player2 = &players[secondarydisplayplayer];
+				if (player2->mo && skyboxmo[0] && cv_skybox.value)
+				{
+					R_SkyboxFrame(player2);
+				}
+				if (player2->mo)
+				{
+					R_SetupFrame(player2, (skyboxmo[0] && cv_skybox.value));
+				}
+			}
+		}
+	}
+
 	P_MapEnd();
+
+
+
 
 //	Z_CheckMemCleanup();
 }
@@ -722,6 +775,8 @@ void P_PreTicker(INT32 frames)
 	for (framecnt = 0; framecnt < frames; ++framecnt)
 	{
 		P_MapStart();
+
+		R_UpdateMobjInterpolators();
 
 		for (i = 0; i < MAXPLAYERS; i++)
 			if (playeringame[i] && players[i].mo && !P_MobjWasRemoved(players[i].mo))
@@ -746,9 +801,7 @@ void P_PreTicker(INT32 frames)
 			if (playeringame[i] && players[i].mo && !P_MobjWasRemoved(players[i].mo))
 				P_PlayerAfterThink(&players[i]);
 
-#ifdef HAVE_BLUA
 		LUAh_ThinkFrame();
-#endif
 
 		// Run shield positioning
 		P_RunShields();
@@ -756,6 +809,10 @@ void P_PreTicker(INT32 frames)
 
 		P_UpdateSpecials();
 		P_RespawnSpecials();
+
+		R_UpdateLevelInterpolators();
+		R_UpdateViewInterpolation();
+		R_ResetViewInterpolation(0);
 
 		P_MapEnd();
 	}
