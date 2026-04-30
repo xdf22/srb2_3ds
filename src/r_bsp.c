@@ -2,7 +2,7 @@
 //-----------------------------------------------------------------------------
 // Copyright (C) 1993-1996 by id Software, Inc.
 // Copyright (C) 1998-2000 by DooM Legacy Team.
-// Copyright (C) 1999-2016 by Sonic Team Junior.
+// Copyright (C) 1999-2018 by Sonic Team Junior.
 //
 // This program is free software distributed under the
 // terms of the GNU General Public License, version 2.
@@ -395,7 +395,6 @@ boolean R_IsEmptyLine(seg_t *line, sector_t *front, sector_t *back)
 		|| front->tag == back->tag));
 }
 
-
 //
 // R_AddLine
 // Clips the given segment and adds any visible pieces to the line list.
@@ -556,9 +555,9 @@ static void R_AddLine(seg_t *line)
 	// Reject empty lines used for triggers and special events.
 	// Identical floor and ceiling on both sides, identical light levels on both sides,
 	// and no middle texture.
+
 	if (R_IsEmptyLine(line, frontsector, backsector))
 		return;
-
 
 clippass:
 	R_ClipPassWallSegment(x1, x2 - 1);

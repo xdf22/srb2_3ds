@@ -182,13 +182,13 @@ void I_GetEvent(void)
 				switch(dskeys[i])
 				{
 					case KEY_B:
-						if (ingame || menuIsChangeControl)
+						if (ingame)
 							event.data1 = KEY_JOY1+1;
 						else
 							event.data1 = KEY_ESCAPE;
 						break;
 					case KEY_A:
-						if (ingame || menuIsChangeControl)
+						if (ingame)
 							event.data1 = KEY_JOY1+0;
 						else
 							event.data1 = KEY_ENTER;

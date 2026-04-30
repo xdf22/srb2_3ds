@@ -2,7 +2,7 @@
 //-----------------------------------------------------------------------------
 // Copyright (C) 1993-1996 by id Software, Inc.
 // Copyright (C) 1998-2000 by DooM Legacy Team.
-// Copyright (C) 1999-2016 by Sonic Team Junior.
+// Copyright (C) 1999-2018 by Sonic Team Junior.
 //
 // This program is free software distributed under the
 // terms of the GNU General Public License, version 2.
@@ -150,9 +150,9 @@ extern FILE *logstream;
 // we use comprevision and compbranch instead.
 #else
 #define VERSION    201 // Game version
-#define SUBVERSION 20  // more precise version number
-#define VERSIONSTRING "v2.1.20"
-#define VERSIONSTRINGW L"v2.1.20"
+#define SUBVERSION 21  // more precise version number
+#define VERSIONSTRING "v2.1.21"
+#define VERSIONSTRINGW L"v2.1.21"
 // Hey! If you change this, add 1 to the MODVERSION below!
 // Otherwise we can't force updates!
 #endif
@@ -214,7 +214,7 @@ extern FILE *logstream;
 // it's only for detection of the version the player is using so the MS can alert them of an update.
 // Only set it higher, not lower, obviously.
 // Note that we use this to help keep internal testing in check; this is why v2.1.0 is not version "1".
-#define MODVERSION 25
+#define MODVERSION 26
 
 // =========================================================================
 
@@ -352,7 +352,7 @@ void CONS_Debug(INT32 debugflags, const char *fmt, ...) FUNCDEBUG;
 
 // Things that used to be in dstrings.h
 #define SAVEGAMENAME "srb2sav"
-extern char savegamename[256];
+char savegamename[256];
 
 // m_misc.h
 #ifdef GETTEXT
@@ -477,7 +477,7 @@ extern const char *compdate, *comptime, *comprevision, *compbranch;
 #define SHUFFLE // This has nothing to do with sorting, why was it disabled?
 #endif
 
-#if !defined (_PSP)
+#if !defined (_NDS) && !defined (_PSP)
 ///	Allow the use of the SOC RESETINFO command.
 ///	\note	Builds that are tight on memory should disable this.
 ///	    	This stops the game from storing backups of the states, sprites, and mobjinfo tables.
@@ -508,6 +508,5 @@ extern const char *compdate, *comptime, *comprevision, *compbranch;
 /// \note	SRB2CB port.
 ///      	SRB2CB itself ported this from PrBoom+
 #define NEWCLIP
-
 
 #endif // __DOOMDEF__

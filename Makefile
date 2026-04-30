@@ -35,13 +35,13 @@ VERS_STRING := $(shell git describe --tags --match v[0-9]* --abbrev=8 | sed 's/-
 #---------------------------------------------------------------------------------
 TARGET		:=	$(notdir $(CURDIR))
 BUILD		:=	build
-SOURCES := source \
-			source/nds \
-			source/hardware \
-			source/blua \
+SOURCES := src \
+			src/nds \
+			src/hardware \
+			src/blua \
 
 DATA		:=	data
-INCLUDES	:=	source
+INCLUDES	:=	src
 GRAPHICS	:=	gfx
 GFXBUILD	:=	$(BUILD)
 #ROMFS		:=	romfs
@@ -61,7 +61,7 @@ CFLAGS	:=	-g -Wall -O3 -mword-relocations \
 			-fomit-frame-pointer -ffunction-sections \
 			$(ARCH) -std=gnu17 -Wno-incompatible-pointer-types
 DEFINES	:=	-D__3DS__  -DNDS_VERS_STRING=\"$(VERS_STRING)\" \
-			-D_NDS -DNONET -DNO_IPV6 -DNOHS -DNOMD5 -DHAVE_BLUA -DHWRENDER -DNOPOSTPROCESSING -DNOSPLITSCREEN -DDIAGNOSTIC
+			-D_NDS -DNONET -DNO_IPV6 -DNOHS -DNOMD5 -DHAVE_BLUA -DHWRENDER -DNOPOSTPROCESSING -DNOSPLITSCREEN -DDIAGNOSTIC -DHAVE_ZLIB
 
 CFLAGS	+=	$(INCLUDE) $(DEFINES)
 
@@ -70,7 +70,7 @@ CXXFLAGS	:= $(CFLAGS) -fno-rtti -fno-exceptions -std=gnu++11
 ASFLAGS	:=	-g $(ARCH)
 LDFLAGS	=	-specs=3dsx.specs -g $(ARCH) -Wl,-Map,$(notdir $*.map) -z muldefs
 
-LIBS	:= -lSDL_mixer -lmikmod -lmad -lvorbisidec -logg -lSDL -lcitro3d -lctru -lm
+LIBS	:= -lSDL_mixer -lmikmod -lmad -lvorbisidec -logg -lSDL -lcitro3d -lctru -lm -lz
 
 #---------------------------------------------------------------------------------
 # list of directories containing libraries, this must be the top level containing
@@ -205,6 +205,7 @@ CFILES		:=	i_main.o \
 				lvm.o    \
 				lzio.o    \
 				lua_baselib.o    \
+				lua_blockmaplib.o    \
 				lua_consolelib.o    \
 				lua_hooklib.o    \
 				lua_hudlib.o    \
