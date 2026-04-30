@@ -1409,6 +1409,9 @@ void R_RegisterEngineStuff(void)
 	CV_RegisterVar(&cv_grcoronasize);
 #endif
 	CV_RegisterVar(&cv_grmd2);
+#ifndef __3DS__
+	CV_RegisterVar(&cv_grspritebillboarding);
+#endif
 #endif
 
 #ifdef HWRENDER
