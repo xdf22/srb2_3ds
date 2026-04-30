@@ -113,4 +113,8 @@ typedef struct
 	INT32           drawcount;
 } floorinfo_t;
 
+#ifdef __3DS__
+void HWR_InitVertexBuffer();
+#endif
+
 #endif

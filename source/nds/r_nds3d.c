@@ -1103,7 +1103,7 @@ int processRenderQueue(void)
 				//printf("split\n");
 				C3D_FrameSplit(0);
 				//printf("wait done\n");
-				C3Di_RenderQueueWaitDone();
+				//C3Di_RenderQueueWaitDone(); the citro3d fork needed for upstream has this function but that doesnt go ingame for some reason
 				break;
 			}
 

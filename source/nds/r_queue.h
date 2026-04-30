@@ -110,3 +110,5 @@ float queueGetUsage();
 u32 queueGetFrameProgress();
 void queueWaitForFrameProgress(u32 expected);
 void queueNotifyFrameProgress();
+
+queuePacket *queueAllocPacketSafe(); // this isnt supposed to be here but who cares

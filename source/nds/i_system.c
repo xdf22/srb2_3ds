@@ -13,6 +13,8 @@
 #include "../d_main.h"
 #include "../m_menu.h"
 #include "../i_system.h"
+#include "../i_video.h"
+#include "../i_sound.h"
 #include "../i_joy.h"
 #include "nds_utils.h"
 #include "r_queue.h"
@@ -275,7 +277,7 @@ ticcmd_t *I_BaseTiccmd2(void)
 void I_Quit(void)
 {
 	printf("EXIT!\n");
-	I_ShutdownDigMusic();
+	I_ShutdownMusic();
 	I_ShutdownGraphics();
 	exit(0);
 }

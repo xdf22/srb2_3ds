@@ -5,6 +5,7 @@
 #include <stdarg.h>
 #include <assert.h>
 #include <malloc.h>
+#include <ctype.h>
 #include <3ds.h>
 
 //#define NDS3D_DEBUG_PRINT

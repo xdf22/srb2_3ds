@@ -7,6 +7,8 @@
 #define boolean bool
 
 #include "../doomtype.h"
+#include "r_nds3d.h"
+#include "../hardware/hw_main.h"
 #include "../hardware/hw_defs.h"
 #include "../hardware/hw_dll.h"
 #include "../hardware/hw_md2.h"

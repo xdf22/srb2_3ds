@@ -30,6 +30,7 @@
 
 #include "../doomdef.h"
 #include "../command.h"
+#include "../i_system.h"
 #include "../i_video.h"
 #include "../z_zone.h"
 
@@ -57,7 +58,7 @@ boolean allow_fullscreen = false;
 consvar_t cv_vidwait = {"vid_wait", "On", CV_SAVE, CV_OnOff, NULL, 0, NULL, NULL, 0, 0, NULL};
 extern consvar_t cv_ticrate;
 
-consvar_t cv_3dswidemode = {"gr_3dswidemode", "On", CV_SAVE, CV_OnOff, NULL, 0, NULL, NULL, 0, 0, NULL};
+consvar_t cv_3dswidemode = {"gr_3dswidemode", "Off", CV_SAVE, CV_OnOff, NULL, 0, NULL, NULL, 0, 0, NULL}; // this just stretches the screen, useless
 
 CV_PossibleValue_t CV_3dsfoclen[] = {{50, "1"}, {60, "2"}, {70, "3"}, {80, "4"},
 	{90, "5"}, {100, "6"}, {110, "7"}, {120, "8"}, {130, "9"}, {140, "10"}, {150, "11"},
@@ -975,7 +976,7 @@ void I_StartupGraphics(void)
 
 	CV_RegisterVar(&cv_vidwait);
 
-	bool ok = C3D_InitEx(GPU_CMDBUF_SIZE, GPU_GXQUEUE_SIZE, true);
+	bool ok = C3D_Init(GPU_CMDBUF_SIZE);
 	if (!ok) {
 		N3DS_Panic("Failed to Init Citro3D!\n");
 	}
