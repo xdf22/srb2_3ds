@@ -144,6 +144,7 @@ UINT8 P_GetNextEmerald(void);
 void P_GiveEmerald(boolean spawnObj);
 void P_ResetScore(player_t *player);
 boolean P_AutoPause(void);
+void P_ForceLocalAngle(player_t *player, angle_t angle);
 
 void P_DoJumpShield(player_t *player);
 void P_BlackOw(player_t *player);

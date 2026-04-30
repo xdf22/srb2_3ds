@@ -260,6 +260,9 @@ menu_t OP_VideoOptionsDef, OP_VideoModeDef;
 menu_t OP_OpenGLOptionsDef, OP_OpenGLFogDef, OP_OpenGLColorDef;
 #endif
 menu_t OP_SoundOptionsDef;
+#ifdef HAVE_OPENMPT
+menu_t OP_SoundAdvancedDef;
+#endif
 
 //Misc
 menu_t OP_DataOptionsDef, OP_ScreenshotOptionsDef, OP_EraseDataDef;
@@ -1196,7 +1199,23 @@ static menuitem_t OP_SoundOptionsMenu[] =
 	{IT_STRING | IT_CVAR,  NULL,  "SFX"   , &cv_gamesounds,        50},
 	{IT_STRING | IT_CVAR,  NULL,  "Digital Music", &cv_gamedigimusic,     60},
 	{IT_STRING | IT_CVAR,  NULL,  "MIDI Music", &cv_gamemidimusic,        70},
+
+	{IT_STRING | IT_CVAR,  NULL,  "Play SFX if Unfocused", &cv_playsoundsifunfocused,  90},
+	{IT_STRING | IT_CVAR,  NULL,  "Play Music if Unfocused", &cv_playmusicifunfocused, 100},
+
+#ifdef HAVE_OPENMPT
+	{IT_STRING 	  | IT_SUBMENU, NULL, "Advanced Settings...", &OP_SoundAdvancedDef, 120},
+#endif
 };
+
+#ifdef HAVE_OPENMPT
+static menuitem_t OP_SoundAdvancedMenu[] =
+{
+	{IT_HEADER, NULL, "OpenMPT Settings", NULL, 10},
+
+	{IT_STRING | IT_CVAR, NULL, "Instrument Filter", &cv_modfilter, 22}
+};
+#endif
 
 static menuitem_t OP_DataOptionsMenu[] =
 {
@@ -1274,18 +1293,19 @@ static menuitem_t OP_GameOptionsMenu[] =
 	{IT_STRING | IT_CVAR, NULL, "Show HUD",               &cv_showhud,     50},
 	{IT_STRING | IT_CVAR | IT_CV_SLIDER,
 	                      NULL, "HUD Visibility",         &cv_translucenthud, 60},
-	{IT_STRING | IT_CVAR, NULL, "Timer Display",          &cv_timetic,     70},
-	{IT_STRING | IT_CVAR, NULL, "Always Compact Rankings",          &cv_compactscoreboard,     80},
+	{IT_STRING | IT_CVAR, NULL, "Timer/Rings Display",    &cv_timetic,     70},
+	{IT_STRING | IT_CVAR, NULL, "Score Display",          &cv_scorepos,     80},
+	{IT_STRING | IT_CVAR, NULL, "Always Compact Rankings",          &cv_compactscoreboard,     90},
 #ifdef SEENAMES
-	{IT_STRING | IT_CVAR, NULL, "HUD Player Names",       &cv_seenames,    90},
+	{IT_STRING | IT_CVAR, NULL, "HUD Player Names",       &cv_seenames,    100},
 #endif
-	{IT_STRING | IT_CVAR, NULL, "Log Hazard Damage",      &cv_hazardlog,   100},
+	{IT_STRING | IT_CVAR, NULL, "Log Hazard Damage",      &cv_hazardlog,   110},
 
-	{IT_STRING | IT_CVAR, NULL, "Console Back Color",     &cons_backcolor, 110},
-	{IT_STRING | IT_CVAR, NULL, "Console Text Size",      &cv_constextsize,120},
-	{IT_STRING | IT_CVAR, NULL, "Uppercase Console",      &cv_allcaps,     130},
+	{IT_STRING | IT_CVAR, NULL, "Console Back Color",     &cons_backcolor, 120},
+	{IT_STRING | IT_CVAR, NULL, "Console Text Size",      &cv_constextsize,130},
+	{IT_STRING | IT_CVAR, NULL, "Uppercase Console",      &cv_allcaps,     140},
 
-	{IT_STRING | IT_CVAR, NULL, "Title Screen Demos",     &cv_rollingdemos, 140},
+	{IT_STRING | IT_CVAR, NULL, "Title Screen Demos",     &cv_rollingdemos, 150},
 };
 
 static menuitem_t OP_ChatOptionsMenu[] =
@@ -1704,6 +1724,9 @@ menu_t OP_VideoModeDef =
 	NULL
 };
 menu_t OP_SoundOptionsDef = DEFAULTMENUSTYLE("M_SOUND", OP_SoundOptionsMenu, &OP_MainDef, 60, 30);
+#ifdef HAVE_OPENMPT
+menu_t OP_SoundAdvancedDef = DEFAULTMENUSTYLE("M_SOUND", OP_SoundAdvancedMenu, &OP_SoundOptionsDef, 30, 30);
+#endif
 menu_t OP_GameOptionsDef = DEFAULTMENUSTYLE("M_GAME", OP_GameOptionsMenu, &OP_MainDef, 30, 30);
 menu_t OP_ServerOptionsDef = DEFAULTMENUSTYLE("M_SERVER", OP_ServerOptionsMenu, &OP_MainDef, 30, 30);
 
@@ -2098,6 +2121,9 @@ boolean M_Responder(event_t *ev)
 	|| gamestate == GS_CREDITS || gamestate == GS_EVALUATION)
 		return false;
 
+	if (CON_Ready())
+		return false;
+
 	if (noFurtherInput)
 	{
 		// Ignore input after enter/escape/other buttons
@@ -2289,10 +2315,7 @@ boolean M_Responder(event_t *ev)
 
 			case KEY_ESCAPE: // Pop up menu
 				if (chat_on)
-				{
 					HU_clearChatChars();
-					chat_on = false;
-				}
 				else
 					M_StartControlPanel();
 				return true;
@@ -2452,6 +2475,7 @@ boolean M_Responder(event_t *ev)
 				{
 					// D_StartTitle does its own wipe, since GS_TIMEATTACK is now a complete gamestate.
 					menuactive = false;
+					I_UpdateMouseGrab();
 					D_StartTitle();
 				}
 				else
@@ -2476,6 +2500,7 @@ boolean M_Responder(event_t *ev)
 			return false;
 
 		default:
+			CON_Responder(ev);
 			break;
 	}
 
@@ -2649,7 +2674,7 @@ void M_StartControlPanel(void)
 		itemOn = mpause_continue;
 	}
 
-	CON_ToggleOff(); // move away console
+	//CON_ToggleOff(); // move away console
 }
 
 void M_EndModeAttackRun(void)
@@ -2675,6 +2700,8 @@ void M_ClearMenus(boolean callexitmenufunc)
 	if (currentMenu == &MessageDef) // Oh sod off!
 		currentMenu = &MainDef; // Not like it matters
 	menuactive = false;
+
+	I_UpdateMouseGrab();
 }
 
 //

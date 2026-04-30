@@ -327,7 +327,7 @@ static inline VOID I_GetConsoleEvents(VOID)
 							break;
 						case VK_RETURN:
 							entering_con_command = false;
-							// Fall through.
+							/* FALLTHRU */
 						default:
 							ev.data1 = MapVirtualKey(input.Event.KeyEvent.wVirtualKeyCode,2); // convert in to char
 					}
@@ -1353,6 +1353,8 @@ getBufferedData:
 		}
 	}
 }
+
+void I_UpdateMouseGrab(void) {}
 
 // ===========================================================================================
 //                                                                       DIRECT INPUT JOYSTICK

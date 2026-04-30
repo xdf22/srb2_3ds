@@ -34,7 +34,7 @@ u32 __ctru_linear_heap_size = 48 * 1024 * 1024;
 float sliderState = 0.0f;
 //----------------------------
 
-UINT32 I_GetFreeMem(UINT32 *total)
+size_t I_GetFreeMem(size_t *total)
 {
 	*total = 128 * 1024 * 1024;
 	
@@ -503,6 +503,8 @@ void I_GetJoystickEvents(void){}
 void I_GetJoystick2Events(void){}
 
 void I_GetMouseEvents(void){}
+
+void I_UpdateMouseGrab(void){}
 
 char *I_GetEnv(const char *name)
 {

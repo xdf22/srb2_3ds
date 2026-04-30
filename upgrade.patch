@@ -1,0 +1,5349 @@
+diff --git a/src/Android.mk b/src/Android.mk
+deleted file mode 100644
+index a461da224..000000000
+--- a/src/Android.mk
++++ /dev/null
+@@ -1,90 +0,0 @@
+-LOCAL_PATH := $(call my-dir)
+-
+-srb_module_tags := eng user
+-
+-include $(CLEAR_VARS)
+-
+-LOCAL_SRC_FILES :=      am_map.c \
+-                        command.c \
+-                        comptime.c \
+-                        console.c \
+-                        d_clisrv.c \
+-                        d_main.c \
+-                        d_net.c \
+-                        d_netcmd.c \
+-                        d_netfil.c \
+-                        dehacked.c \
+-                        f_finale.c \
+-                        f_wipe.c \
+-                        filesrch.c \
+-                        g_game.c \
+-                        g_input.c \
+-                        hu_stuff.c \
+-                        i_tcp.c \
+-                        info.c \
+-                        lzf.c \
+-                        m_argv.c \
+-                        m_bbox.c \
+-                        m_cheat.c \
+-                        m_fixed.c \
+-                        m_menu.c \
+-                        m_misc.c \
+-                        m_queue.c \
+-                        m_random.c \
+-                        md5.c \
+-                        mserv.c \
+-                        p_ceilng.c \
+-                        p_enemy.c \
+-                        p_fab.c \
+-                        p_floor.c \
+-                        p_inter.c \
+-                        p_lights.c \
+-                        p_map.c \
+-                        p_maputl.c \
+-                        p_mobj.c \
+-                        p_polyobj.c \
+-                        p_saveg.c \
+-                        p_setup.c \
+-                        p_sight.c \
+-                        p_spec.c \
+-                        p_telept.c \
+-                        p_tick.c \
+-                        p_user.c \
+-                        r_bsp.c \
+-                        r_data.c \
+-                        r_draw.c \
+-                        r_main.c \
+-                        r_plane.c \
+-                        r_segs.c \
+-                        r_sky.c \
+-                        r_splats.c \
+-                        r_things.c \
+-                        s_sound.c \
+-                        screen.c \
+-                        sounds.c \
+-                        st_stuff.c \
+-                        string.c \
+-                        tables.c \
+-                        v_video.c \
+-                        w_wad.c \
+-                        y_inter.c \
+-                        z_zone.c \
+-                        android/i_cdmus.c \
+-                        android/i_main.c \
+-                        android/i_net.c \
+-                        android/i_sound.c \
+-                        android/i_system.c \
+-                        android/i_video.c
+-
+-LOCAL_CFLAGS += -DPLATFORM_ANDROID -DNONX86 -DLINUX -DDEBUGMODE -DNOASM -DNOPIX -DUNIXCOMMON -DNOTERMIOS
+-
+-LOCAL_MODULE := libsrb2
+-
+-# we live in an APK, so no prelink for us!
+-LOCAL_PRELINK_MODULE := false
+-
+-LOCAL_SHARED_LIBRARIES += liblog libdl
+-
+-LOCAL_CFLAGS += -Idalvik/libnativehelper/include/nativehelper
+-
+-include $(BUILD_SHARED_LIBRARY)
+diff --git a/src/CMakeLists.txt b/src/CMakeLists.txt
+index a6fab34ff..5d274fb80 100644
+--- a/src/CMakeLists.txt
++++ b/src/CMakeLists.txt
+@@ -218,6 +218,8 @@ set(SRB2_CONFIG_HAVE_ZLIB ON CACHE BOOL
+ 	"Enable zlib support.")
+ set(SRB2_CONFIG_HAVE_GME ON CACHE BOOL
+ 	"Enable GME support.")
++set(SRB2_CONFIG_HAVE_OPENMPT ON CACHE BOOL
++	"Enable OpenMPT support.")
+ set(SRB2_CONFIG_HWRENDER ON CACHE BOOL
+ 	"Enable hardware rendering through OpenGL.")
+ set(SRB2_CONFIG_USEASM OFF CACHE BOOL
+@@ -230,7 +232,7 @@ set(SRB2_CONFIG_STATIC_OPENGL OFF CACHE BOOL
+ ### use internal libraries?
+ if(${CMAKE_SYSTEM} MATCHES "Windows") ###set on Windows only
+ 	set(SRB2_CONFIG_USE_INTERNAL_LIBRARIES OFF CACHE BOOL
+-	"Use SRB2's internal copies of required dependencies (SDL2, PNG, zlib, GME).")
++	"Use SRB2's internal copies of required dependencies (SDL2, PNG, zlib, GME, OpenMPT).")
+ endif()
+ 
+ if(${SRB2_CONFIG_HAVE_BLUA})
+@@ -340,6 +342,26 @@ if(${SRB2_CONFIG_HAVE_GME})
+ 	endif()
+ endif()
+ 
++if(${SRB2_CONFIG_HAVE_OPENMPT})
++	if(${SRB2_CONFIG_USE_INTERNAL_LIBRARIES})
++		set(OPENMPT_FOUND ON)
++		set(OPENMPT_INCLUDE_DIRS ${CMAKE_SOURCE_DIR}/libs/libopenmpt/inc)
++        if(${SRB2_SYSTEM_BITS} EQUAL 64)
++			set(OPENMPT_LIBRARIES "-L${CMAKE_SOURCE_DIR}/libs/libopenmpt/lib/x86_64/mingw -lopenmpt")
++		else() # 32-bit
++			set(OPENMPT_LIBRARIES "-L${CMAKE_SOURCE_DIR}/libs/libopenmpt/lib/x86/mingw -lopenmpt")
++		endif()
++	else()
++		find_package(OPENMPT)
++	endif()
++	if(${OPENMPT_FOUND})
++		set(SRB2_HAVE_OPENMPT ON)
++		add_definitions(-DHAVE_OPENMPT)
++	else()
++		message(WARNING "You have specified that OpenMPT is available but it was not found.")
++	endif()
++endif()
++
+ if(${SRB2_CONFIG_HAVE_ZLIB})
+ 	if(${SRB2_CONFIG_USE_INTERNAL_LIBRARIES})
+ 		set(ZLIB_FOUND ON)
+@@ -452,6 +474,7 @@ if(${SRB2_CONFIG_USEASM})
+ 	endif()
+ 	set(SRB2_USEASM ON)
+ 	add_definitions(-DUSEASM)
++	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -msse3 -mfpmath=sse")
+ else()
+ 	set(SRB2_USEASM OFF)
+ 	add_definitions(-DNONX86 -DNORUSEASM)
+diff --git a/src/Makefile b/src/Makefile
+index 6363ab7dc..3e7ce1748 100644
+--- a/src/Makefile
++++ b/src/Makefile
+@@ -74,6 +74,7 @@
+ #     Compile without BSD API, add 'NONET=1'
+ #     Compile without IPX/SPX, add 'NOIPX=1'
+ #     Compile Mingw/SDL with S_DS3S, add 'DS3D=1'
++#     Compile without libopenmpt, add 'NOOPENMPT=1'
+ #     Compile with S_FMOD3D, add 'FMOD=1' (WIP)
+ #     Compile with S_OPENAL, add 'OPENAL=1' (WIP)
+ #     To link with the whole SDL_Image lib to load Icons, add 'SDL_IMAGE=1' but it isn't not realy needed
+@@ -93,10 +94,6 @@ D_FILES=$(D_DIR)/srb2.srb \
+ 
+ PKG_CONFIG?=pkg-config
+ 
+-ifdef WIILINUX
+-LINUX=1
+-endif
+-
+ ifdef PANDORA
+ LINUX=1
+ endif
+@@ -120,12 +117,6 @@ ifdef HAIKU
+ SDL=1
+ endif
+ 
+-ifdef NDS
+-# Include this before the main Makefile.cfg
+-EXENAME?=srb2.elf
+-include nds/Makefile.cfg
+-endif
+-
+ include Makefile.cfg
+ 
+ ifdef DUMMY
+@@ -152,36 +143,20 @@ PNG_CFLAGS?=
+ PNG_LDFLAGS?=-lpng
+ endif
+ 
+-ifdef WIILINUX
+-NONX86=1
+-NOTERMIOS=1
+-NOHW=1
+-CFLAGS+=-DWMINPUT
+-NOTERMIOS=1
+-NOPOSTPROCESSING=1
+-endif
+-
+ ifdef PANDORA
+ NONX86=1
+ NOHW=1
+ NOHS=1
+ endif
+ 
+-ifdef WII
+-NONX86=1
+-NOHW=1
+-NOPOSTPROCESSING=1
+-endif
+-
+-ifdef PS3N
+-NONX86=1
+-NOHW=1
+-endif
+-
+ ifdef DJGPPDOS
+ include djgppdos/Makefile.cfg
+ endif
+ 
++ifndef NOOPENMPT
++HAVE_OPENMPT=1
++endif
++
+ ifdef MINGW
+ include win32/Makefile.cfg
+ endif #ifdef MINGW
+@@ -209,19 +184,6 @@ ifdef MACOSX
+ UNIXCOMMON=1
+ endif
+ 
+-ifdef NDS
+-NOPNG=1
+-NOZLIB=1
+-NONET=1
+-#NOHW=1
+-NOHS=1
+-NOASM=1
+-NOIPX=1
+-NONX86=1
+-OBJS+=$(OBJDIR)/i_video.o
+-LIBS+=-lm
+-endif
+-
+ ifdef SDL
+ #SDL 2.0
+ ifndef SDL12
+@@ -255,7 +217,6 @@ ifndef ECHO
+ 	MKDIR:=@$(MKDIR)
+ 	MKISOFS:=@$(MKISOFS)
+ 	DD:=@$(DD)
+-	NDSTOOL:=@$(NDSTOOL)
+ 	GZIP:=@$(GZIP)
+ 	MSGFMT:=@$(MSGFMT)
+ 	UPX:=@$(UPX)
+@@ -273,14 +234,12 @@ endif
+ ifdef NOHW
+ 	OPTS+=-DNOHW
+ else
+-ifndef DC
+ 	#Hurdler: not really supported and not tested recently
+ 	#OPTS+=-DUSE_PALETTED_TEXTURE
+ endif
+ 	OPTS+=-DHWRENDER
+ 	OBJS+=$(OBJDIR)/hw_bsp.o $(OBJDIR)/hw_draw.o $(OBJDIR)/hw_light.o \
+ 		 $(OBJDIR)/hw_main.o $(OBJDIR)/hw_clip.o $(OBJDIR)/hw_md2.o $(OBJDIR)/hw_cache.o $(OBJDIR)/hw_trick.o
+-endif
+ 
+ ifdef NOHS
+ 	OPTS+=-DNOHS
+@@ -293,7 +252,7 @@ OPTS += -DCOMPVERSION
+ 
+ ifndef NONX86
+ ifndef GCC29
+-	ARCHOPTS?=-march=pentium
++	ARCHOPTS?=-msse3 -mfpmath=sse
+ else
+ 	ARCHOPTS?=-mpentium
+ endif
+@@ -353,6 +312,17 @@ LIBS+=$(LIBGME_LDFLAGS)
+ CFLAGS+=$(LIBGME_CFLAGS)
+ endif
+ 
++ifdef HAVE_OPENMPT
++OPTS+=-DHAVE_OPENMPT
++
++LIBOPENMPT_PKGCONFIG?=libopenmpt
++LIBOPENMPT_CFLAGS?=$(shell $(PKG_CONFIG) $(LIBOPENMPT_PKGCONFIG) --cflags)
++LIBOPENMPT_LDFLAGS?=$(shell $(PKG_CONFIG) $(LIBOPENMPT_PKGCONFIG) --libs)
++
++LIBS+=$(LIBOPENMPT_LDFLAGS)
++CFLAGS+=$(LIBOPENMPT_CFLAGS)
++endif
++
+ ifndef NOZLIB
+ OPTS+=-DHAVE_ZLIB
+ ZLIB_PKGCONFIG?=zlib
+@@ -391,14 +361,6 @@ else
+ 	OBJS:=$(OBJDIR)/md5.o $(OBJS)
+ endif
+ 
+-ifdef FAKEDC
+-	OPTS+=-DDC
+-endif
+-
+-ifdef FAKEPSP
+-	OPTS+=-DPSP
+-endif
+-
+ ifdef NOPOSTPROCESSING
+ 	OPTS+=-DNOPOSTPROCESSING
+ endif
+@@ -551,49 +513,19 @@ ifdef DJGPPDOS
+ all:	 pre-build $(BIN)/$(EXENAME)
+ endif
+ 
+-ifdef XBOX
+-all:	 pre-build $(BIN)/$(BINNAME)
+-endif
+-
+-ifdef PS3N
+-all:	 pre-build $(BIN)/$(PKGNAME)
+-endif
+-
+-ifdef WII
+-all:	pre-build $(BIN)/$(DOLNAME)
+-endif
+-
+ ifdef PANDORA
+ all:	pre-build $(BIN)/$(PNDNAME)
+ endif
+ 
+-ifdef PSP
+-all:	 pre-build $(BIN)/$(BINNAME) post-build
+-endif
+-
+-ifdef DC
+-all:	 pre-build $(BIN)/$(BINNAME) post-build
+-endif
+-
+-ifndef DC
+-ifndef PSP
+-ifndef XBOX
+ ifdef MINGW
+ ifndef SDL
+ all:	 pre-build $(BIN)/$(EXENAME) dll
+ endif
+ endif
+-endif
+-endif
+ 
+ ifdef SDL
+ all:	 pre-build $(BIN)/$(EXENAME)
+ endif
+-endif
+-
+-ifdef NDS
+-all:	$(BIN)/$(EXENAME:.elf=.nds)
+-endif
+ 
+ ifdef DUMMY
+ all:	$(BIN)/$(EXENAME)
+@@ -647,12 +579,10 @@ endif
+ 
+ # mac os x lsdlsrb2 does not like objcopy
+ ifndef MACOSX
+-ifndef PSP
+ 	$(OBJCOPY) $(BIN)/$(EXENAME) $(BIN)/$(DBGNAME)
+ 	$(OBJCOPY) --strip-debug $(BIN)/$(EXENAME)
+ 	-$(OBJCOPY) --add-gnu-debuglink=$(BIN)/$(DBGNAME) $(BIN)/$(EXENAME)
+ endif
+-endif
+ ifndef NOUPX
+ 	-$(UPX) $(UPX_OPTS) $(BIN)/$(EXENAME)
+ endif
+@@ -771,16 +701,6 @@ endif
+ 	$(REMOVE) $(OBJDIR)/depend.ped
+ 	@echo "Created dependency file, depend.dep"
+ 
+-ifdef DC
+-$(OBJDIR)/v_video.o: v_video.c doomdef.h doomtype.h g_state.h m_swap.h r_local.h \
+-  tables.h m_fixed.h screen.h command.h m_bbox.h r_main.h d_player.h \
+-  p_pspr.h info.h d_think.h sounds.h p_mobj.h doomdata.h d_ticcmd.h \
+-  r_data.h r_defs.h r_state.h r_bsp.h r_segs.h r_plane.h r_sky.h \
+-  r_things.h r_draw.h v_video.h hu_stuff.h d_event.h w_wad.h console.h \
+-  i_video.h z_zone.h doomstat.h d_clisrv.h d_netcmd.h
+-	$(CC) $(CFLAGS) -fno-omit-frame-pointer $(WFLAGS) -c $< -o $@
+-endif
+-
+ ifdef VALGRIND
+ $(OBJDIR)/z_zone.o: z_zone.c
+ 	$(CC) $(CFLAGS) $(WFLAGS) -DHAVE_VALGRIND $(VALGRIND_CFLAGS) -c $< -o $@
+@@ -822,71 +742,6 @@ $(OBJDIR)/%.o: %.s
+ $(OBJDIR)/SRB2.res: win32/Srb2win.rc win32/afxres.h win32/resource.h
+ 	$(WINDRES) -i $< -O rc $(WINDRESFLAGS) --include-dir=win32 -o $@ -O coff
+ 
+-ifdef DC
+-$(OBJDIR)/romdisk.img:
+-	$(KOS_GENROMFS) -f romdisk.img -d ../data -v
+-
+-$(OBJDIR)/romdisk.o: romdisk.img
+-	$(KOS_BASE)/utils/bin2o/bin2o romdisk.img romdisk romdisk.o
+-
+-$(OBJDIR)/dchelp.o: $(INTERFACE)/SRB2DC/dchelp.c
+-	$(CC) $(CFLAGS) $(WFLAGS) -c $< -o $@
+-
+-$(OBJDIR)/i_udp.o: $(INTERFACE)/SRB2DC/i_udp.c
+-	$(CC) $(CFLAGS) $(WFLAGS) -c $< -o $@
+-
+-$(BIN)/IP.BIN: $(INTERFACE)/SRB2DC/IP.BIN
+-	$(CP) $< $@
+-
+-$(BIN)/SRB2DC.cdi.pass1: $(INTERFACE)/SRB2DC/SELFBOOT.BIN
+-	$(CP) $< $@
+-
+-$(BIN)/$(BINNAME): $(BIN)/$(EXENAME)
+-	$(KOS_OBJCOPY) -R .stack -O binary $< $@
+-
+-$(BIN)/1ST_READ.BIN: $(BIN)/$(BINNAME) $(BIN)/scramble
+-	$(BIN)/scramble $< $@
+-
+-$(BIN)/scramble: $(INTERFACE)/SRB2DC/scramble.c
+-	-$(MKDIR) $(BIN)
+-	$(HOSTCC) $< -o $@
+-
+-iso: $(BIN)/SRB2DC.iso
+-cdi: $(BIN)/SRB2DC.cdi
+-
+-$(BIN)/SRB2DC.iso.pass1: $(BIN)/1ST_READ.BIN $(BIN)/IP.BIN
+-	-$(MKDIR) $(BIN)/cdrom
+-	$(CP) $(BIN)/1ST_READ.BIN $(D_FILES) $(BIN)/cdrom
+-	$(MKISOFS) -l -r -o $@ $(BIN)/cdrom
+-
+-$(BIN)/SRB2DC.iso.pass2: $(BIN)/SRB2DC.iso.pass1
+-	$(DD) if=$< of=$@ bs=2048 skip=16 status=noxfer
+-
+-$(BIN)/SRB2DC.iso: $(BIN)/SRB2DC.iso.pass2 $(BIN)/IP.BIN
+-	@cat $(BIN)/IP.BIN $(BIN)/SRB2DC.iso.pass2 > $@
+-
+-$(BIN)/SRB2DC.cdi: $(BIN)/SRB2DC.iso.pass2 $(BIN)/SRB2DC.cdi.pass1 $(BIN)/IP.BIN
+-	@cat $(BIN)/SRB2DC.cdi.pass1 $(BIN)/IP.BIN $(BIN)/SRB2DC.iso.pass2 > $@
+-
+-post-build: $(BIN)/1ST_READ.BIN
+-endif
+-
+-ifdef XBOX
+-$(OBJDIR)/xboxhelp.o: $(INTERFACE)/SRB2XBOX/xboxhelp.c
+-		$(CC) $(CFLAGS) $(WFLAGS) -c $< -o $@
+-
+-$(BIN)/$(BINNAME): $(BIN)/$(EXENAME)
+-	$(CXBE) -OUT:"$@" -DUMPINFO:"$(BIN)/SRB2XBOX.cxbe"  -TITLE:"Sonic Robo Blast 2" $<
+-endif
+-
+-ifdef NDS
+-$(BIN)/$(EXENAME:.elf=.nds): $(BIN)/$(EXENAME:.elf=.arm9)
+-	$(NDSTOOL) -c $@ -9 $(BIN)/$(EXENAME:.elf=.arm9)
+-
+-%.arm9: %.elf
+-	$(OBJCOPY) -O binary $< $@
+-endif
+-
+ ifdef MINGW
+ ifndef SDL
+ ifndef NOHW
+diff --git a/src/Makefile.cfg b/src/Makefile.cfg
+index c69fcd57d..4658eb4ff 100644
+--- a/src/Makefile.cfg
++++ b/src/Makefile.cfg
+@@ -234,8 +234,7 @@ ifdef GCC61
+  WFLAGS+=-Wno-tautological-compare -Wno-error=tautological-compare
+ endif
+ ifdef GCC71
+- WFLAGS+=-Wno-error=implicit-fallthrough
+- WFLAGS+=-Wno-implicit-fallthrough
++ WFLAGS+=-Wimplicit-fallthrough=4
+ endif
+ ifdef GCC81
+  WFLAGS+=-Wno-error=format-overflow
+diff --git a/src/android/README b/src/android/README
+deleted file mode 100644
+index a8d35b598..000000000
+--- a/src/android/README
++++ /dev/null
+@@ -1,43 +0,0 @@
+-SRB2 for Google Android!
+-
+-SYNOPSIS
+-
+-Port of SRB2 to Android, tested against version 1.6 (donut).
+-
+-I did this with a full Android tree, rather than the NDK thing.
+-
+-BUILDING
+-
+-Assuming a pretty standard Android tree, at $REPO, and the SRB2
+-tree at $REPO/packages/apps/srb2 (that is, the *whole* SRB2
+-tree, not just this android/ directory):
+-
+-  cd $REPO
+-  source build/envsetup.sh # this gives us the mm command,
+-                           # which is useful for selectively
+-                           # building only one component.
+-  cd packages/apps/srb2
+-  mm
+-
+-An APK is dumped out at (or similar):
+-out/target/product/generic/system/app/SRB2.apk
+-
+-Naturally, an SRB2 APK is architecture specific.  Since most
+-Android devices are currently ARMEL, this is pretty okay.
+-
+-NB. It appears that the Java app (the thing that becomes the APK)
+-is *not* rebuilt if changes are only made to libsrb2.  Grr.
+-
+-REGENERATION OF JNI HEADERS
+-
+-Whenever the Java classes in org.srb2.nativecode change,
+-the C header files that describe the JNI interface to them
+-need to be regnererated.  Make sure you have the project
+-built (so that the jar files are up to date), and then:
+-
+-  cd $REPO/out/target/common/obj/APPS/SRB2_intermediates
+-
+-  javah -classpath classes.jar -o $REPO/packages/apps/srb2/src/android/jni_main.h org.srb2.nativecode.Main
+-
+-# ... and no, I don't know how to mash all that into the
+-# Android.mk build system...
+diff --git a/src/android/i_cdmus.c b/src/android/i_cdmus.c
+deleted file mode 100644
+index 426bc5dc9..000000000
+--- a/src/android/i_cdmus.c
++++ /dev/null
+@@ -1,37 +0,0 @@
+-#include "../command.h"
+-#include "../s_sound.h"
+-#include "../i_sound.h"
+-
+-//
+-// CD MUSIC I/O
+-//
+-
+-UINT8 cdaudio_started = 0;
+-
+-consvar_t cd_volume = {"cd_volume","18",CV_SAVE,soundvolume_cons_t, NULL, 0, NULL, NULL, 0, 0, NULL};
+-consvar_t cdUpdate  = {"cd_update","1",CV_SAVE, NULL, NULL, 0, NULL, NULL, 0, 0, NULL};
+-
+-
+-void I_InitCD(void){}
+-
+-void I_StopCD(void){}
+-
+-void I_PauseCD(void){}
+-
+-void I_ResumeCD(void){}
+-
+-void I_ShutdownCD(void){}
+-
+-void I_UpdateCD(void){}
+-
+-void I_PlayCD(UINT8 track, UINT8 looping)
+-{
+-        (void)track;
+-        (void)looping;
+-}
+-
+-boolean I_SetVolumeCD(INT32 volume)
+-{
+-        (void)volume;
+-        return false;
+-}
+diff --git a/src/android/i_main.c b/src/android/i_main.c
+deleted file mode 100644
+index 7595668cb..000000000
+--- a/src/android/i_main.c
++++ /dev/null
+@@ -1,53 +0,0 @@
+-#define LOG_TAG "SRB2-main"
+-#include "utils/Log.h"
+-
+-#include "../doomdef.h"
+-#include "../d_main.h"
+-#include "../m_argv.h"
+-
+-#include "i_video.h"
+-
+-#include "jni_main.h"
+-
+-int srb2_main()
+-{
+-        // startup SRB2
+-        CONS_Printf ("Setting up SRB2 (fo' real)...");
+-        D_SRB2Main();
+-        CONS_Printf ("Entering main game loop...");
+-        // never return
+-        D_SRB2Loop();
+-        LOGD("Control left SRB2.  Good bye.");
+-
+-        // return to OS
+-        return 0;
+-}
+-
+-JNIEXPORT jint JNICALL Java_org_srb2_nativecode_Main_main
+-(JNIEnv * env, jobject self, jobject video) {
+-  jobject fbBuf;
+-  jfieldID fbBufField;
+-
+-  // a global reference to JNI Env, so my callbacks can use it:
+-  jni_env = env;
+-  androidVideo = video;
+-
+-  jclass videoClass = (*env)->FindClass(env, "org/srb2/nativecode/Video");
+-  if(videoClass == NULL) {
+-    LOGE("Could not find Video class from JNI!");
+-    return -1;
+-  }
+-  fbBufField = (*env)->GetFieldID(env, videoClass, "fb", "Ljava/nio/ByteBuffer;");
+-  fbBuf = (*env)->GetObjectField(env, video, fbBufField);
+-  if(fbBuf == NULL) {
+-    LOGE("Couldn't get Video object from JNI!");
+-    return -1;
+-  }
+-  videoFrameCB = (*env)->GetMethodID(env, videoClass, "gotFrame", "()V");
+-  if(videoFrameCB == NULL) {
+-    LOGE("Couldn't get method ID of Video#gotFrame() callback!");
+-    return -1;
+-  }
+-  android_surface = (UINT8*) (*env)->GetDirectBufferAddress(env, fbBuf);
+-  return srb2_main();
+-}
+diff --git a/src/android/i_net.c b/src/android/i_net.c
+deleted file mode 100644
+index f6e642022..000000000
+--- a/src/android/i_net.c
++++ /dev/null
+@@ -1,6 +0,0 @@
+-#include "../i_net.h"
+-
+-boolean I_InitNetwork(void)
+-{
+-	return false;
+-}
+diff --git a/src/android/i_sound.c b/src/android/i_sound.c
+deleted file mode 100644
+index b5a1c3646..000000000
+--- a/src/android/i_sound.c
++++ /dev/null
+@@ -1,214 +0,0 @@
+-#include "../i_sound.h"
+-
+-UINT8 sound_started = 0;
+-
+-void *I_GetSfx(sfxinfo_t *sfx)
+-{
+-        (void)sfx;
+-        return NULL;
+-}
+-
+-void I_FreeSfx(sfxinfo_t *sfx)
+-{
+-        (void)sfx;
+-}
+-
+-void I_StartupSound(void){}
+-
+-void I_ShutdownSound(void){}
+-
+-//
+-//  SFX I/O
+-//
+-
+-INT32 I_StartSound(sfxenum_t id, INT32 vol, INT32 sep, INT32 pitch, INT32 priority, INT32 channel)
+-{
+-        (void)id;
+-        (void)vol;
+-        (void)sep;
+-        (void)pitch;
+-        (void)priority;
+-        (void)channel;
+-        return -1;
+-}
+-
+-void I_StopSound(INT32 handle)
+-{
+-        (void)handle;
+-}
+-
+-INT32 I_SoundIsPlaying(INT32 handle)
+-{
+-        (void)handle;
+-        return false;
+-}
+-
+-void I_UpdateSoundParams(INT32 handle, INT32 vol, INT32 sep, INT32 pitch)
+-{
+-        (void)handle;
+-        (void)vol;
+-        (void)sep;
+-        (void)pitch;
+-}
+-
+-void I_SetSfxVolume(INT32 volume)
+-{
+-        (void)volume;
+-}
+-
+-/// ------------------------
+-//  MUSIC SYSTEM
+-/// ------------------------
+-
+-UINT8 music_started = 0;
+-UINT8 digmusic_started = 0;
+-
+-void I_InitMusic(void){}
+-
+-void I_ShutdownMusic(void){}
+-
+-/// ------------------------
+-//  MUSIC PROPERTIES
+-/// ------------------------
+-
+-musictype_t I_SongType(void)
+-{
+-	return MU_NONE;
+-}
+-
+-boolean I_SongPlaying(void)
+-{
+-	return false;
+-}
+-
+-boolean I_SongPaused(void)
+-{
+-	return false;
+-}
+-
+-/// ------------------------
+-//  MUSIC EFFECTS
+-/// ------------------------
+-
+-boolean I_SetSongSpeed(float speed)
+-{
+-        (void)speed;
+-        return false;
+-}
+-
+-/// ------------------------
+-//  MUSIC SEEKING
+-/// ------------------------
+-
+-UINT32 I_GetSongLength(void)
+-{
+-        return 0;
+-}
+-
+-boolean I_SetSongLoopPoint(UINT32 looppoint)
+-{
+-        (void)looppoint;
+-        return false;
+-}
+-
+-UINT32 I_GetSongLoopPoint(void)
+-{
+-	return 0;
+-}
+-
+-boolean I_SetSongPosition(UINT32 position)
+-{
+-        (void)position;
+-        return false;
+-}
+-
+-UINT32 I_GetSongPosition(void)
+-{
+-        return 0;
+-}
+-
+-/// ------------------------
+-//  MUSIC PLAYBACK
+-/// ------------------------
+-
+-UINT8 midimusic_started = 0;
+-
+-boolean I_LoadSong(char *data, size_t len)
+-{
+-        (void)data;
+-        (void)len;
+-        return -1;
+-}
+-
+-void I_UnloadSong()
+-{
+-
+-}
+-
+-boolean I_PlaySong(boolean looping)
+-{
+-        (void)handle;
+-        (void)looping;
+-        return false;
+-}
+-
+-void I_StopSong(void)
+-{
+-        (void)handle;
+-}
+-
+-void I_PauseSong(void)
+-{
+-        (void)handle;
+-}
+-
+-void I_ResumeSong(void)
+-{
+-        (void)handle;
+-}
+-
+-void I_SetMusicVolume(INT32 volume)
+-{
+-        (void)volume;
+-}
+-
+-/// ------------------------
+-//  MUSIC FADING
+-/// ------------------------
+-
+-void I_SetInternalMusicVolume(UINT8 volume)
+-{
+-	(void)volume;
+-}
+-
+-void I_StopFadingSong(void)
+-{
+-}
+-
+-boolean I_FadeSongFromVolume(UINT8 target_volume, UINT8 source_volume, UINT32 ms, void (*callback)(void));
+-{
+-	(void)target_volume;
+-	(void)source_volume;
+-	(void)ms;
+-        return false;
+-}
+-
+-boolean I_FadeSong(UINT8 target_volume, UINT32 ms, void (*callback)(void));
+-{
+-	(void)target_volume;
+-	(void)ms;
+-	return false;
+-}
+-
+-boolean I_FadeOutStopSong(UINT32 ms)
+-{
+-        (void)ms;
+-        return false;
+-}
+-
+-boolean I_FadeInPlaySong(UINT32 ms, boolean looping)
+-{
+-        (void)ms;
+-        (void)looping;
+-        return false;
+-}
+diff --git a/src/android/i_system.c b/src/android/i_system.c
+deleted file mode 100644
+index 58fca7c19..000000000
+--- a/src/android/i_system.c
++++ /dev/null
+@@ -1,275 +0,0 @@
+-#define LOG_TAG "SRB2"
+-
+-#include "../doomdef.h"
+-#include "../i_system.h"
+-
+-#include <stdio.h>
+-#include <stdlib.h>
+-#include <unistd.h>
+-#include <sys/types.h>
+-#include <sys/stat.h>
+-#include <fcntl.h>
+-
+-#include <utils/Log.h>
+-
+-#define MEMINFO_FILE "/proc/meminfo"
+-#define MEMTOTAL "MemTotal:"
+-#define MEMFREE "MemFree:"
+-
+-UINT8 graphics_started = 0;
+-
+-UINT8 keyboard_started = 0;
+-
+-static INT64 start_time; // as microseconds since the epoch
+-
+-// I should probably return how much memory is remaining
+-// for this process, considering Android's process memory limit.
+-UINT32 I_GetFreeMem(UINT32 *total)
+-{
+-  // what the heck?  sysinfo() is partially missing in bionic?
+-  /* struct sysinfo si; */
+-  /* if(sysinfo(&si) != 0) { */
+-  /*   I_Error("Couldn't invoke sysinfo()...?"); */
+-  /* } */
+-  /* return si.freeram; */
+-  char buf[1024];
+-  char *memTag;
+-  UINT32 freeKBytes;
+-  UINT32 totalKBytes;
+-  INT32 n;
+-  INT32 meminfo_fd = -1;
+-
+-  meminfo_fd = open(MEMINFO_FILE, O_RDONLY);
+-  n = read(meminfo_fd, buf, 1023);
+-  close(meminfo_fd);
+-
+-  if (n < 0)
+-    {
+-      // Error
+-      *total = 0L;
+-      return 0;
+-    }
+-
+-  buf[n] = '\0';
+-  if (NULL == (memTag = strstr(buf, MEMTOTAL)))
+-    {
+-      // Error
+-      *total = 0L;
+-      return 0;
+-    }
+-
+-  memTag += sizeof (MEMTOTAL);
+-  totalKBytes = atoi(memTag);
+-
+-  if (NULL == (memTag = strstr(buf, MEMFREE)))
+-    {
+-      // Error
+-      *total = 0L;
+-      return 0;
+-    }
+-
+-  memTag += sizeof (MEMFREE);
+-  freeKBytes = atoi(memTag);
+-
+-  if (total)
+-    *total = totalKBytes << 10;
+-  return freeKBytes << 10;
+-}
+-
+-INT64 current_time_in_ps() {
+-  struct timeval t;
+-  gettimeofday(&t, NULL);
+-  return (t.tv_sec * (INT64)1000000) + t.tv_usec;
+-}
+-
+-tic_t I_GetTime(void)
+-{
+-  INT64 since_start = current_time_in_ps() - start_time;
+-  return (since_start*TICRATE)/1000000;
+-}
+-
+-void I_Sleep(void){}
+-
+-void I_GetEvent(void){}
+-
+-void I_OsPolling(void){}
+-
+-ticcmd_t *I_BaseTiccmd(void)
+-{
+-  return NULL;
+-}
+-
+-ticcmd_t *I_BaseTiccmd2(void)
+-{
+-  return NULL;
+-}
+-
+-void I_Quit(void)
+-{
+-  LOGD("SRB2 quitting!");
+-  exit(0);
+-}
+-
+-void I_Error(const char *error, ...)
+-{
+-  va_list argptr;
+-  char logbuf[8192];
+-
+-  va_start(argptr, error);
+-  vsprintf(logbuf, error, argptr);
+-  va_end(argptr);
+-
+-  LOGE(logbuf);
+-  exit(-1);
+-}
+-
+-void I_Tactile(FFType Type, const JoyFF_t *Effect)
+-{
+-  (void)Type;
+-  (void)Effect;
+-}
+-
+-void I_Tactile2(FFType Type, const JoyFF_t *Effect)
+-{
+-  (void)Type;
+-  (void)Effect;
+-}
+-
+-void I_JoyScale(void){}
+-
+-void I_JoyScale2(void){}
+-
+-void I_InitJoystick(void){}
+-
+-void I_InitJoystick2(void){}
+-
+-INT32 I_NumJoys(void)
+-{
+-  return 0;
+-}
+-
+-const char *I_GetJoyName(INT32 joyindex)
+-{
+-  (void)joyindex;
+-  return NULL;
+-}
+-
+-void I_SetupMumble(void)
+-{
+-}
+-
+-#ifndef NOMUMBLE
+-void I_UpdateMumble(const mobj_t *mobj, const listener_t listener)
+-{
+-	(void)mobj;
+-	(void)listener;
+-}
+-#endif
+-
+-void I_OutputMsg(const char *fmt, ...)
+-{
+-  va_list argptr;
+-  char logbuf[8192];
+-
+-  va_start(argptr, fmt);
+-  vsprintf(logbuf, fmt, argptr);
+-  va_end(argptr);
+-
+-  LOGD(logbuf);
+-}
+-
+-void I_StartupMouse(void){}
+-
+-void I_StartupMouse2(void){}
+-
+-void I_StartupKeyboard(void){}
+-
+-INT32 I_GetKey(void)
+-{
+-  return 0;
+-}
+-
+-void I_StartupTimer(void) {
+-  struct timeval t;
+-  gettimeofday(&t, NULL);
+-  start_time = (t.tv_sec * 1000000) + t.tv_usec;
+-}
+-
+-void I_AddExitFunc(void (*func)())
+-{
+-  (void)func;
+-}
+-
+-void I_RemoveExitFunc(void (*func)())
+-{
+-  (void)func;
+-}
+-
+-INT32 I_StartupSystem(void)
+-{
+-  return -1;
+-}
+-
+-void I_ShutdownSystem(void){}
+-
+-void I_GetDiskFreeSpace(INT64* freespace)
+-{
+-  *freespace = 0;
+-}
+-
+-char *I_GetUserName(void)
+-{
+-  return "Android";
+-}
+-
+-INT32 I_mkdir(const char *dirname, INT32 unixright)
+-{
+-  (void)dirname;
+-  (void)unixright;
+-  return -1;
+-}
+-
+-const CPUInfoFlags *I_CPUInfo(void)
+-{
+-  return NULL;
+-}
+-
+-const char *I_LocateWad(void)
+-{
+-  return "/sdcard/srb2";
+-}
+-
+-void I_GetJoystickEvents(void){}
+-
+-void I_GetJoystick2Events(void){}
+-
+-void I_GetMouseEvents(void){}
+-
+-char *I_GetEnv(const char *name)
+-{
+-  LOGW("I_GetEnv() called?!");
+-  (void)name;
+-  return NULL;
+-}
+-
+-INT32 I_PutEnv(char *variable)
+-{
+-  (void)variable;
+-  return -1;
+-}
+-
+-INT32 I_ClipboardCopy(const char *data, size_t size)
+-{
+-	(void)data;
+-	(void)size;
+-	return -1;
+-}
+-
+-char *I_ClipboardPaste(void)
+-{
+-	return NULL;
+-}
+-
+-void I_RegisterSysCommands(void) {}
+-
+-#include "../sdl/dosstr.c"
+diff --git a/src/android/i_video.c b/src/android/i_video.c
+deleted file mode 100644
+index 2d0151f5e..000000000
+--- a/src/android/i_video.c
++++ /dev/null
+@@ -1,80 +0,0 @@
+-#include "../doomdef.h"
+-#include "../command.h"
+-#include "../i_video.h"
+-#include "../v_video.h"
+-#include "../screen.h"
+-
+-#include "i_video.h"
+-
+-#include "utils/Log.h"
+-
+-rendermode_t rendermode = render_soft;
+-
+-boolean highcolor = false;
+-
+-boolean allow_fullscreen = false;
+-
+-
+-
+-consvar_t cv_vidwait = {"vid_wait", "On", CV_SAVE, CV_OnOff, NULL, 0, NULL, NULL, 0, 0, NULL};
+-
+-void I_StartupGraphics(void){}
+-
+-void I_ShutdownGraphics(void){}
+-
+-void I_SetPalette(RGBA_t *palette)
+-{
+-  (void)palette;
+-}
+-
+-INT32 VID_NumModes(void)
+-{
+-  return 1;
+-}
+-
+-INT32 VID_GetModeForSize(INT32 w, INT32 h)
+-{
+-  (void)w;
+-  (void)h;
+-  return 0;
+-}
+-
+-void VID_PrepareModeList(void){}
+-
+-INT32 VID_SetMode(INT32 modenum)
+-{
+-  vid.modenum = 0;
+-  vid.width = 320;
+-  vid.height = 240;
+-  vid.bpp = 1;
+-  vid.buffer = android_surface;
+-  return 0;
+-}
+-
+-const char *VID_GetModeName(INT32 modenum)
+-{
+-  return "A320x240";
+-}
+-
+-void I_UpdateNoBlit(void){}
+-
+-void I_FinishUpdate(void) {
+-  LOGD("FRAME!");
+-  (*jni_env)->CallVoidMethod(jni_env, androidVideo, videoFrameCB);
+-}
+-
+-void I_UpdateNoVsync(void) {}
+-
+-void I_WaitVBL(INT32 count)
+-{
+-  (void)count;
+-}
+-
+-void I_ReadScreen(UINT8 *scr)
+-{
+-  (void)scr;
+-}
+-
+-void I_BeginRead(void){}
+-
+-void I_EndRead(void){}
+diff --git a/src/android/i_video.h b/src/android/i_video.h
+deleted file mode 100644
+index 62fec6654..000000000
+--- a/src/android/i_video.h
++++ /dev/null
+@@ -1,12 +0,0 @@
+-#ifndef _SRB2_ANDROID_VIDEO_
+-#define _SRB2_ANDROID_VIDEO_
+-
+-#include <jni.h>
+-
+-UINT8 *android_surface;
+-
+-JNIEnv* jni_env;
+-jobject androidVideo;
+-jmethodID videoFrameCB;
+-
+-#endif
+diff --git a/src/android/jni_main.h b/src/android/jni_main.h
+deleted file mode 100644
+index da7f70331..000000000
+--- a/src/android/jni_main.h
++++ /dev/null
+@@ -1,21 +0,0 @@
+-/* DO NOT EDIT THIS FILE - it is machine generated */
+-#include <jni.h>
+-/* Header for class org_srb2_nativecode_Main */
+-
+-#ifndef _Included_org_srb2_nativecode_Main
+-#define _Included_org_srb2_nativecode_Main
+-#ifdef __cplusplus
+-extern "C" {
+-#endif
+-/*
+- * Class:     org_srb2_nativecode_Main
+- * Method:    main
+- * Signature: (Lorg/srb2/nativecode/Video;)I
+- */
+-JNIEXPORT jint JNICALL Java_org_srb2_nativecode_Main_main
+-  (JNIEnv *, jobject, jobject);
+-
+-#ifdef __cplusplus
+-}
+-#endif
+-#endif
+diff --git a/src/console.c b/src/console.c
+index 91baf25fc..5f583de67 100644
+--- a/src/console.c
++++ b/src/console.c
+@@ -107,7 +107,7 @@ static void CONS_backcolor_Change(void);
+ #ifdef macintosh
+ #define CON_BUFFERSIZE 4096 // my compiler can't handle local vars >32k
+ #else
+-#define CON_BUFFERSIZE 16384
++#define CON_BUFFERSIZE 65536
+ #endif
+ 
+ static char con_buffer[CON_BUFFERSIZE];
+@@ -567,6 +567,8 @@ void CON_ToggleOff(void)
+ 	CON_ClearHUD();
+ 	con_forcepic = 0;
+ 	con_clipviewtop = -1; // remove console clipping of view
++
++	I_UpdateMouseGrab();
+ }
+ 
+ boolean CON_Ready(void)
+@@ -585,14 +587,6 @@ void CON_Ticker(void)
+ 	con_tick++;
+ 	con_tick &= 7;
+ 
+-	// if the menu is open then close the console.
+-	if (menuactive && con_destlines)
+-	{
+-		consoletoggle = false;
+-		con_destlines = 0;
+-		CON_ClearHUD();
+-	}
+-
+ 	// console key was pushed
+ 	if (consoletoggle)
+ 	{
+@@ -603,6 +597,7 @@ void CON_Ticker(void)
+ 		{
+ 			con_destlines = 0;
+ 			CON_ClearHUD();
++			I_UpdateMouseGrab();
+ 		}
+ 		else
+ 			CON_ChangeHeight();
+@@ -1591,3 +1586,4 @@ void CON_Drawer(void)
+ 	else if (gamestate == GS_LEVEL || gamestate == GS_INTERMISSION || gamestate == GS_CUTSCENE || gamestate == GS_CREDITS)
+ 		CON_DrawHudlines();
+ }
++
+diff --git a/src/d_main.c b/src/d_main.c
+index 3344732e5..6addd57bf 100644
+--- a/src/d_main.c
++++ b/src/d_main.c
+@@ -139,6 +139,8 @@ boolean advancedemo;
+ INT32 debugload = 0;
+ #endif
+ 
++char savegamename[256];
++
+ #ifdef _arch_dreamcast
+ char srb2home[256] = "/cd";
+ char srb2path[256] = "/cd";
+@@ -433,13 +435,11 @@ static void D_Display(void)
+ 	// vid size change is now finished if it was on...
+ 	vid.recalc = 0;
+ 
+-	// FIXME: draw either console or menu, not the two
+-	if (gamestate != GS_TIMEATTACK)
+-		CON_Drawer();
+-
+ 	M_Drawer(); // menu is drawn even on top of everything
+ 	// focus lost moved to M_Drawer
+ 
++	CON_Drawer();
++
+ 	//
+ 	// wipe update
+ 	//
+@@ -538,9 +538,14 @@ void D_SRB2Loop(void)
+ 	// hack to start on a nice clear console screen.
+ 	COM_ImmedExecute("cls;version");
+ 
+-	if (rendermode == render_soft)
+-		V_DrawScaledPatch(0, 0, 0, (patch_t *)W_CacheLumpNum(W_GetNumForName("CONSBACK"), PU_CACHE));
+ 	I_FinishUpdate(); // page flip or blit buffer
++	/*
++	LMFAO this was showing garbage under OpenGL
++	because I_FinishUpdate was called afterward
++	*/
++	/* Smells like a hack... Don't fade Sonic's ass into the title screen. */
++	if (gamestate != GS_TITLESCREEN)
++		V_DrawScaledPatch(0, 0, 0, W_CachePatchNum(W_GetNumForName("CONSBACK"), PU_CACHE));
+ 
+ 	for (;;)
+ 	{
+@@ -1436,3 +1441,4 @@ const char *D_Home(void)
+ 	if (usehome) return userhome;
+ 	else return NULL;
+ }
++
+diff --git a/src/d_netcmd.c b/src/d_netcmd.c
+index cc9127af0..66ff5952d 100644
+--- a/src/d_netcmd.c
++++ b/src/d_netcmd.c
+@@ -202,7 +202,10 @@ static CV_PossibleValue_t chances_cons_t[] = {{0, "MIN"}, {9, "MAX"}, {0, NULL}}
+ static CV_PossibleValue_t match_scoring_cons_t[] = {{0, "Normal"}, {1, "Classic"}, {0, NULL}};
+ static CV_PossibleValue_t pause_cons_t[] = {{0, "Server"}, {1, "All"}, {0, NULL}};
+ 
+-static CV_PossibleValue_t timetic_cons_t[] = {{0, "Normal"}, {1, "Tics"}, {2, "Centiseconds"}, {0, NULL}};
++static CV_PossibleValue_t timetic_cons_t[] = {{0, "Normal"}, {1, "Centiseconds"}, {2, "Mania"}, {3, "Tics"}, {0, NULL}};
++//Using "Normal" instead of 2.2's "Classic" in order to be compatible with people's existing configurations.
++
++static CV_PossibleValue_t  scorepos_cons_t[] = {{0, "Normal"}, {1, "Modern"}, {0, NULL}};
+ 
+ #ifdef NETGAME_DEVMODE
+ static consvar_t cv_fishcake = {"fishcake", "Off", CV_CALL|CV_NOSHOWHELP|CV_RESTRICT, CV_OnOff, Fishcake_OnChange, 0, NULL, NULL, 0, 0, NULL};
+@@ -320,6 +323,7 @@ consvar_t cv_overtime = {"overtime", "Yes", CV_NETVAR, CV_YesNo, NULL, 0, NULL,
+ consvar_t cv_rollingdemos = {"rollingdemos", "On", CV_SAVE, CV_OnOff, NULL, 0, NULL, NULL, 0, 0, NULL};
+ 
+ consvar_t cv_timetic = {"timerres", "Normal", CV_SAVE, timetic_cons_t, NULL, 0, NULL, NULL, 0, 0, NULL}; // use tics in display
++consvar_t cv_scorepos = {"scorepos", "Normal", CV_SAVE, scorepos_cons_t, NULL, 0, NULL, NULL, 0, 0, NULL}; // for score position
+ static CV_PossibleValue_t pointlimit_cons_t[] = {{0, "MIN"}, {999999990, "MAX"}, {0, NULL}};
+ consvar_t cv_pointlimit = {"pointlimit", "0", CV_NETVAR|CV_CALL|CV_NOINIT, pointlimit_cons_t,
+ 	PointLimit_OnChange, 0, NULL, NULL, 0, 0, NULL};
+@@ -363,6 +367,8 @@ consvar_t cv_pause = {"pausepermission", "Server", CV_NETVAR, pause_cons_t, NULL
+ consvar_t cv_mute = {"mute", "Off", CV_NETVAR|CV_CALL, CV_OnOff, Mute_OnChange, 0, NULL, NULL, 0, 0, NULL};
+ 
+ consvar_t cv_sleep = {"cpusleep", "-1", CV_SAVE, sleeping_cons_t, NULL, -1, NULL, NULL, 0, 0, NULL};
++consvar_t cv_freedemocamera = {"freedemocamera", "Off", CV_SAVE, CV_OnOff, NULL};
++
+ 
+ INT16 gametype = GT_COOP;
+ boolean splitscreen = false;
+@@ -668,6 +674,7 @@ void D_RegisterClientCommands(void)
+ 
+ 	// HUD
+ 	CV_RegisterVar(&cv_timetic);
++	CV_RegisterVar(&cv_scorepos);
+ 	CV_RegisterVar(&cv_itemfinder);
+ 
+ 	// time attack ghost options are also saved to config
+@@ -786,6 +793,8 @@ void D_RegisterClientCommands(void)
+ //	CV_RegisterVar(&cv_grid);
+ //	CV_RegisterVar(&cv_snapto);
+ 
++	CV_RegisterVar(&cv_freedemocamera);
++
+ 	// add cheat commands
+ 	COM_AddCommand("noclip", Command_CheatNoClip_f);
+ 	COM_AddCommand("god", Command_CheatGod_f);
+@@ -1938,6 +1947,8 @@ static void Got_Pause(UINT8 **cp, INT32 playernum)
+ 		else
+ 			S_ResumeAudio();
+ 	}
++
++	I_UpdateMouseGrab();
+ }
+ 
+ // Command for stuck characters in netgames, griefing, etc.
+@@ -3353,9 +3364,9 @@ static void Command_ListWADS_f(void)
+ static void Command_Version_f(void)
+ {
+ #ifdef DEVELOP
+-	CONS_Printf("Sonic Robo Blast 2 %s-%s (%s %s) ", compbranch, comprevision, compdate, comptime);
++	CONS_Printf("Sonic Robo Blast 2 Legacy %s-%s (%s %s) ", compbranch, comprevision, compdate, comptime);
+ #else
+-	CONS_Printf("Sonic Robo Blast 2 %s (%s %s %s) ", VERSIONSTRING, compdate, comptime, comprevision);
++	CONS_Printf("Sonic Robo Blast 2 Legacy %s (%s %s %s) ", VERSIONSTRING, compdate, comptime, comprevision);
+ #endif
+ 
+ 	// Base library
+diff --git a/src/d_netcmd.h b/src/d_netcmd.h
+index 244693356..c91d5c2c8 100644
+--- a/src/d_netcmd.h
++++ b/src/d_netcmd.h
+@@ -111,6 +111,8 @@ extern consvar_t cv_skipmapcheck;
+ 
+ extern consvar_t cv_sleep;
+ 
++extern consvar_t cv_freedemocamera;
++
+ typedef enum
+ {
+ 	XD_NAMEANDCOLOR = 1,
+@@ -202,3 +204,4 @@ void D_SetPassword(const char *pw);
+ UINT8 CanChangeSkin(INT32 playernum);
+ 
+ #endif
++
+diff --git a/src/d_netfil.c b/src/d_netfil.c
+index deb04fbe1..8ee2df451 100644
+--- a/src/d_netfil.c
++++ b/src/d_netfil.c
+@@ -723,7 +723,7 @@ void SV_FileSendTicker(void)
+ 		if (ram)
+ 			M_Memcpy(p->data, &f->id.ram[transfer[i].position], size);
+ 		else if (fread(p->data, 1, size, transfer[i].currentfile) != size)
+-			I_Error("SV_FileSendTicker: can't read %s byte on %s at %d because %s", sizeu1(size), f->id.filename, transfer[i].position, strerror(ferror(transfer[i].currentfile)));
++			I_Error("SV_FileSendTicker: can't read %s byte on %s at %d because %s", sizeu1(size), f->id.filename, transfer[i].position, M_FileError(transfer[i].currentfile));
+ 		p->position = LONG(transfer[i].position);
+ 		// Put flag so receiver knows the total size
+ 		if (transfer[i].position + size == f->size)
+@@ -752,9 +752,12 @@ void Got_Filetxpak(void)
+ {
+ 	INT32 filenum = netbuffer->u.filetxpak.fileid;
+ 	fileneeded_t *file = &fileneeded[filenum];
+-	char *filename = file->filename;
++	char *filename;
+ 	static INT32 filetime = 0;
+ 
++	filename = va("%s", file->filename);
++	nameonly(filename);
++
+ 	if (!(strcmp(filename, "srb2.srb")
+ 		&& strcmp(filename, "srb2.wad")
+ 		&& strcmp(filename, "zones.dta")
+@@ -765,6 +768,8 @@ void Got_Filetxpak(void)
+ 		))
+ 		I_Error("Tried to download \"%s\"", filename);
+ 
++	filename = file->filename;
++
+ 	if (filenum >= fileneedednum)
+ 	{
+ 		DEBFILE(va("fileframent not needed %d>%d\n", filenum, fileneedednum));
+@@ -798,7 +803,7 @@ void Got_Filetxpak(void)
+ 		// We can receive packet in the wrong order, anyway all os support gaped file
+ 		fseek(file->file, pos, SEEK_SET);
+ 		if (fwrite(netbuffer->u.filetxpak.data,size,1,file->file) != 1)
+-			I_Error("Can't write to %s: %s\n",filename, strerror(ferror(file->file)));
++			I_Error("Can't write to %s: %s\n",filename, M_FileError(file->file));
+ 		file->currentsize += size;
+ 
+ 		// Finished?
+diff --git a/src/doomdef.h b/src/doomdef.h
+index 1c034f5f7..28578be3a 100644
+--- a/src/doomdef.h
++++ b/src/doomdef.h
+@@ -150,9 +150,9 @@ extern FILE *logstream;
+ // we use comprevision and compbranch instead.
+ #else
+ #define VERSION    201 // Game version
+-#define SUBVERSION 25  // more precise version number
+-#define VERSIONSTRING "v2.1.25"
+-#define VERSIONSTRINGW L"v2.1.25"
++#define SUBVERSION 26  // more precise version number
++#define VERSIONSTRING "v2.1.26"
++#define VERSIONSTRINGW L"v2.1.26"
+ // Hey! If you change this, add 1 to the MODVERSION below!
+ // Otherwise we can't force updates!
+ #endif
+@@ -217,7 +217,7 @@ extern FILE *logstream;
+ // it's only for detection of the version the player is using so the MS can alert them of an update.
+ // Only set it higher, not lower, obviously.
+ // Note that we use this to help keep internal testing in check; this is why v2.1.0 is not version "1".
+-#define MODVERSION 30
++#define MODVERSION 31
+ 
+ // To version config.cfg, MAJOREXECVERSION is set equal to MODVERSION automatically.
+ // Increment MINOREXECVERSION whenever a config change is needed that does not correspond
+@@ -323,9 +323,9 @@ enum {
+ // Name of local directory for config files and savegames
+ #if !defined(_arch_dreamcast) && !defined(_WIN32_WCE) && !defined(GP2X) && !defined(_WII) && !defined(_PS3)
+ #if (((defined (__unix__) && !defined (MSDOS)) || defined (UNIXCOMMON)) && !defined (__CYGWIN__)) && !defined (__APPLE__)
+-#define DEFAULTDIR ".srb2"
++#define DEFAULTDIR ".srb2_21"
+ #else
+-#define DEFAULTDIR "srb2"
++#define DEFAULTDIR "srb2_21"
+ #endif
+ #endif
+ 
+@@ -371,7 +371,7 @@ void CONS_Debug(INT32 debugflags, const char *fmt, ...) FUNCDEBUG;
+ 
+ // Things that used to be in dstrings.h
+ #define SAVEGAMENAME "srb2sav"
+-char savegamename[256];
++extern char savegamename[256];
+ 
+ // m_misc.h
+ #ifdef GETTEXT
+diff --git a/src/doomstat.h b/src/doomstat.h
+index 7f8b5fd6e..a6dd247d7 100644
+--- a/src/doomstat.h
++++ b/src/doomstat.h
+@@ -383,7 +383,7 @@ extern recorddata_t *mainrecords[NUMMAPS];
+ extern UINT8 mapvisited[NUMMAPS];
+ 
+ // Temporary holding place for nights data for the current map
+-nightsdata_t ntemprecords;
++extern nightsdata_t ntemprecords;
+ 
+ extern UINT32 token; ///< Number of tokens collected in a level
+ extern UINT32 tokenlist; ///< List of tokens collected
+@@ -491,6 +491,7 @@ extern boolean singletics;
+ #include "d_clisrv.h"
+ 
+ extern consvar_t cv_timetic; // display high resolution timer
++extern consvar_t cv_scorepos;
+ extern consvar_t cv_forceskin; // force clients to use the server's skin
+ extern consvar_t cv_downloading; // allow clients to downloading WADs.
+ extern ticcmd_t netcmds[BACKUPTICS][MAXPLAYERS];
+@@ -500,3 +501,4 @@ extern INT32 adminplayers[MAXPLAYERS];
+ /// \note put these in d_clisrv outright?
+ 
+ #endif //__DOOMSTAT__
++
+diff --git a/src/doomtype.h b/src/doomtype.h
+index b44e32e46..fcbaf6060 100644
+--- a/src/doomtype.h
++++ b/src/doomtype.h
+@@ -29,6 +29,12 @@
+ 
+ /* 7.18.1.1  Exact-width integer types */
+ #ifdef _MSC_VER
++// libopenmpt.h will include stdint.h later;
++// include it now so that INT8_MAX etc. don't get redefined
++#ifdef HAVE_OPENMPT
++#include <stdint.h>
++#endif
++
+ #define UINT8 unsigned __int8
+ #define SINT8 signed __int8
+ 
+@@ -161,6 +167,15 @@ typedef long ssize_t;
+ #define HAVE_DOSSTR_FUNCS
+ #endif
+ 
++#if defined (__APPLE__)
++	#define SRB2_HAVE_STRLCPY
++#elif defined (__GLIBC_PREREQ)
++	// glibc 2.38: added strlcpy and strlcat to _DEFAULT_SOURCE
++	#if __GLIBC_PREREQ(2, 38)
++		#define SRB2_HAVE_STRLCPY
++	#endif
++#endif
++
+ #ifndef HAVE_DOSSTR_FUNCS
+ int strupr(char *n); // from dosstr.c
+ int strlwr(char *n); // from dosstr.c
+@@ -168,7 +183,7 @@ int strlwr(char *n); // from dosstr.c
+ 
+ #include <stddef.h> // for size_t
+ 
+-#ifndef __APPLE__
++#ifndef SRB2_HAVE_STRLCPY
+ size_t strlcat(char *dst, const char *src, size_t siz);
+ size_t strlcpy(char *dst, const char *src, size_t siz);
+ #endif
+@@ -206,6 +221,7 @@ size_t strlcpy(char *dst, const char *src, size_t siz);
+ #endif // __BYTEBOOL__
+ 
+ /* 7.18.2.1  Limits of exact-width integer types */
++
+ #ifndef INT8_MIN
+ #define INT8_MIN (-128)
+ #endif
+diff --git a/src/dummy/i_system.c b/src/dummy/i_system.c
+index a3fe3077c..1dec5ac0d 100644
+--- a/src/dummy/i_system.c
++++ b/src/dummy/i_system.c
+@@ -5,7 +5,7 @@ UINT8 graphics_started = 0;
+ 
+ UINT8 keyboard_started = 0;
+ 
+-UINT32 I_GetFreeMem(UINT32 *total)
++size_t I_GetFreeMem(size_t *total)
+ {
+ 	*total = 0;
+ 	return 0;
+@@ -150,6 +150,8 @@ void I_GetJoystick2Events(void){}
+ 
+ void I_GetMouseEvents(void){}
+ 
++void I_UpdateMouseGrab(void){}
++
+ char *I_GetEnv(const char *name)
+ {
+ 	(void)name;
+@@ -177,4 +179,3 @@ char *I_ClipboardPaste(void)
+ void I_RegisterSysCommands(void) {}
+ 
+ #include "../sdl/dosstr.c"
+-
+diff --git a/src/g_game.c b/src/g_game.c
+index c61056f35..73f6a9e76 100644
+--- a/src/g_game.c
++++ b/src/g_game.c
+@@ -1703,6 +1703,7 @@ void G_DoLoadLevel(boolean resetplayer)
+ 		Y_EndIntermission();
+ 
+ 	G_SetGamestate(GS_LEVEL);
++	I_UpdateMouseGrab();
+ 
+ 	for (i = 0; i < MAXPLAYERS; i++)
+ 	{
+diff --git a/src/hu_stuff.c b/src/hu_stuff.c
+index a9a2b7504..6c249cc5e 100644
+--- a/src/hu_stuff.c
++++ b/src/hu_stuff.c
+@@ -1058,6 +1058,8 @@ void HU_clearChatChars(void)
+ 		w_chat[i] = 0; // reset this.
+ 	chat_on = false;
+ 	c_input = 0;
++
++	I_UpdateMouseGrab();
+ }
+ 
+ #ifndef NONET
+@@ -1208,6 +1210,7 @@ boolean HU_Responder(event_t *ev)
+ 			chat_on = false;
+ 			c_input = 0; // reset input cursor
+ 			chat_scrollmedown = true; // you hit enter, so you might wanna autoscroll to see what you just sent. :)
++			I_UpdateMouseGrab();
+ 		}
+ 		else if (c == KEY_ESCAPE
+ 			|| ((c == gamecontrol[gc_talkkey][0] || c == gamecontrol[gc_talkkey][1]
+@@ -1216,6 +1219,7 @@ boolean HU_Responder(event_t *ev)
+ 		{
+ 			chat_on = false;
+ 			c_input = 0; // reset input cursor
++			I_UpdateMouseGrab();
+ 		}
+ 		else if ((c == KEY_UPARROW || c == KEY_MOUSEWHEELUP) && chat_scroll > 0 && !OLDCHAT) // CHAT SCROLLING YAYS!
+ 		{
+@@ -3077,3 +3081,4 @@ void HU_DoCEcho(const char *msg)
+ 	cechotext[sizeof(cechotext) - 1] = '\0';
+ 	cechotimer = cechoduration;
+ }
++
+diff --git a/src/i_sound.h b/src/i_sound.h
+index 9a5c2930a..d427881d2 100644
+--- a/src/i_sound.h
++++ b/src/i_sound.h
+@@ -30,7 +30,8 @@ typedef enum {
+ 	MU_MP3_MAD_UNUSED, // use MU_MP3 instead
+ 	MU_FLAC,
+ 	MU_MODPLUG_UNUSED, // use MU_MOD instead
+-	MU_GME
++	MU_GME,
++	MU_MOD_EX // libopenmpt
+ } musictype_t;
+ 
+ /**	\brief Sound subsystem runing and waiting
+diff --git a/src/i_system.h b/src/i_system.h
+index a8d707d16..c80bfd6cc 100644
+--- a/src/i_system.h
++++ b/src/i_system.h
+@@ -40,7 +40,7 @@ extern UINT8 keyboard_started;
+ 
+ 	\return	free memory in the system
+ */
+-UINT32 I_GetFreeMem(UINT32 *total);
++size_t I_GetFreeMem(size_t *total);
+ 
+ /**	\brief  Called by D_SRB2Loop, returns current time in tics.
+ */
+@@ -292,6 +292,10 @@ void I_GetJoystick2Events(void);
+ */
+ void I_GetMouseEvents(void);
+ 
++/**	\brief Checks if the mouse needs to be grabbed
++*/
++void I_UpdateMouseGrab(void);
++
+ char *I_GetEnv(const char *name);
+ 
+ INT32 I_PutEnv(char *variable);
+diff --git a/src/lua_consolelib.c b/src/lua_consolelib.c
+index dced4e43c..7766ba1c2 100644
+--- a/src/lua_consolelib.c
++++ b/src/lua_consolelib.c
+@@ -303,6 +303,8 @@ static int lib_cvRegisterVar(lua_State *L)
+ #define FIELDERROR(f, e) luaL_error(L, "bad value for " LUA_QL(f) " in table passed to " LUA_QL("CV_RegisterVar") " (%s)", e);
+ #define TYPEERROR(f, t) FIELDERROR(f, va("%s expected, got %s", lua_typename(L, t), luaL_typename(L, -1)))
+ 
++	memset(cvar, 0x00, sizeof(consvar_t)); // zero everything by default
++
+ 	lua_pushnil(L);
+ 	while (lua_next(L, 1)) {
+ 		// stack: cvar table, cvar userdata, key/index, value
+@@ -390,6 +392,13 @@ static int lib_cvRegisterVar(lua_State *L)
+ #undef FIELDERROR
+ #undef TYPEERROR
+ 
++	if (!cvar->name)
++		return luaL_error(L, M_GetText("Variable has no name!\n"));
++	if ((cvar->flags & CV_NOINIT) && !(cvar->flags & CV_CALL))
++		return luaL_error(L, M_GetText("Variable %s has CV_NOINIT without CV_CALL\n"), cvar->name);
++	if ((cvar->flags & CV_CALL) && !cvar->func)
++		return luaL_error(L, M_GetText("Variable %s has CV_CALL without a function\n"), cvar->name);
++
+ 	// stack: cvar table, cvar userdata
+ 	lua_getfield(L, LUA_REGISTRYINDEX, "CV_Vars");
+ 	I_Assert(lua_istable(L, 3));
+diff --git a/src/lua_playerlib.c b/src/lua_playerlib.c
+index dd7439321..68e3e7891 100644
+--- a/src/lua_playerlib.c
++++ b/src/lua_playerlib.c
+@@ -628,7 +628,7 @@ static int power_get(lua_State *L)
+ 	UINT16 *powers = *((UINT16 **)luaL_checkudata(L, 1, META_POWERS));
+ 	powertype_t p = luaL_checkinteger(L, 2);
+ 	if (p >= NUMPOWERS)
+-		return luaL_error(L, LUA_QL("powertype_t") " cannot be %u", p);
++		return luaL_error(L, LUA_QL("powertype_t") " cannot be %d", (INT16)p);
+ 	lua_pushinteger(L, powers[p]);
+ 	return 1;
+ }
+@@ -640,7 +640,7 @@ static int power_set(lua_State *L)
+ 	powertype_t p = luaL_checkinteger(L, 2);
+ 	UINT16 i = (UINT16)luaL_checkinteger(L, 3);
+ 	if (p >= NUMPOWERS)
+-		return luaL_error(L, LUA_QL("powertype_t") " cannot be %u", p);
++		return luaL_error(L, LUA_QL("powertype_t") " cannot be %d", (INT16)p);
+ 	if (hud_running)
+ 		return luaL_error(L, "Do not alter player_t in HUD rendering code!");
+ 	powers[p] = i;
+diff --git a/src/m_anigif.c b/src/m_anigif.c
+index 4e68819bc..ca4e04201 100644
+--- a/src/m_anigif.c
++++ b/src/m_anigif.c
+@@ -19,6 +19,10 @@
+ #include "v_video.h"
+ #include "i_video.h"
+ 
++#ifdef HWRENDER
++#include "hardware/hw_main.h"
++#endif
++
+ // GIFs are always little-endian
+ #include "byteptr.h"
+ 
+@@ -28,6 +32,7 @@ consvar_t cv_gif_downscale =  {"gif_downscale", "On", CV_SAVE, CV_OnOff, NULL, 0
+ #ifdef HAVE_ANIGIF
+ static boolean gif_optimize = false; // So nobody can do something dumb
+ static boolean gif_downscale = false; // like changing cvars mid output
++static RGBA_t *gif_palette = NULL;
+ 
+ static FILE *gif_out = NULL;
+ static INT32 gif_frames = 0;
+@@ -396,7 +401,6 @@ static void GIF_headwrite(void)
+ {
+ 	UINT8 *gifhead = Z_Malloc(800, PU_STATIC, NULL);
+ 	UINT8 *p = gifhead;
+-	RGBA_t *c;
+ 	INT32 i;
+ 	UINT16 rwidth, rheight;
+ 
+@@ -427,12 +431,12 @@ static void GIF_headwrite(void)
+ 	WRITEUINT8(p, 0x00);
+ 
+ 	// write color table
++	RGBA_t *pal = gif_palette;
+ 	for (i = 0; i < 256; ++i)
+ 	{
+-		c = &pLocalPalette[i];
+-		WRITEUINT8(p, c->s.red);
+-		WRITEUINT8(p, c->s.green);
+-		WRITEUINT8(p, c->s.blue);
++		WRITEUINT8(p, pal[i].s.red);
++		WRITEUINT8(p, pal[i].s.green);
++		WRITEUINT8(p, pal[i].s.blue);
+ 	}
+ 
+ 	// write extension block
+@@ -452,6 +456,32 @@ const UINT8 gifframe_gchead[4] = {0x21,0xF9,0x04,0x04}; // GCE, bytes, packed by
+ static UINT8 *gifframe_data = NULL;
+ static size_t gifframe_size = 8192;
+ 
++#ifdef HWRENDER
++static void hwrconvert(void)
++{
++	UINT8 *linear = HWR_GetScreenshot();
++	UINT8 *dest = screens[2];
++	UINT8 r, g, b;
++	INT32 x, y;
++	size_t i = 0;
++
++	InitColorLUT(gif_palette);
++
++	for (y = 0; y < vid.height; y++)
++	{
++		for (x = 0; x < vid.width; x++, i += 3)
++		{
++			r = (UINT8)linear[i];
++			g = (UINT8)linear[i + 1];
++			b = (UINT8)linear[i + 2];
++			dest[(y * vid.width) + x] = colorlookup[r >> SHIFTCOLORBITS][g >> SHIFTCOLORBITS][b >> SHIFTCOLORBITS];
++		}
++	}
++
++	free(linear);
++}
++#endif
++
+ //
+ // GIF_framewrite
+ // writes a frame into the file.
+@@ -477,7 +507,12 @@ static void GIF_framewrite(void)
+ 		GIF_optimizeregion(cur_screen, movie_screen, &blitx, &blity, &blitw, &blith);
+ 
+ 		// blit to temp screen
+-		I_ReadScreen(movie_screen);
++		if (rendermode == render_soft)
++			I_ReadScreen(movie_screen);
++#ifdef HWRENDER
++		else if (rendermode == render_opengl)
++			hwrconvert();
++#endif
+ 	}
+ 	else
+ 	{
+@@ -486,7 +521,17 @@ static void GIF_framewrite(void)
+ 		blith = vid.height;
+ 
+ 		if (gif_frames == 0)
+-			I_ReadScreen(movie_screen);
++		{
++			if (rendermode == render_soft)
++				I_ReadScreen(movie_screen);
++#ifdef HWRENDER
++			else if (rendermode == render_opengl)
++			{
++				hwrconvert();
++				VID_BlitLinearScreen(screens[2], screens[0], vid.width*vid.bpp, vid.height, vid.width*vid.bpp, vid.rowbytes);
++			}
++#endif
++		}
+ 		movie_screen = screens[0];
+ 	}
+ 
+@@ -575,7 +620,7 @@ static void GIF_framewrite(void)
+ //
+ INT32 GIF_open(const char *filename)
+ {
+-#ifdef HWRENDER
++#if 0
+ 	if (rendermode != render_soft)
+ 	{
+ 		CONS_Alert(CONS_WARNING, M_GetText("GIFs cannot be taken in non-software modes!\n"));
+@@ -589,6 +634,21 @@ INT32 GIF_open(const char *filename)
+ 
+ 	gif_optimize = (!!cv_gif_optimize.value);
+ 	gif_downscale = (!!cv_gif_downscale.value);
++
++	// GIF color table
++	// In hardware mode, uses the master palette
++
++	/*gif_palette = ((cv_screenshot_colorprofile.value
++#ifdef HWRENDER
++	&& (rendermode == render_soft)
++#endif
++	) ? pLocalPalette
++	: pMasterPalette);*/
++
++	//TODO: Add pMasterPalette from 2.2
++	// pLocalPalette seems to work fine here for now.
++	gif_palette = pLocalPalette;
++
+ 	GIF_headwrite();
+ 	gif_frames = 0;
+ 	return 1;
+@@ -634,3 +694,4 @@ INT32 GIF_close(void)
+ 	return 1;
+ }
+ #endif //ifdef HAVE_ANIGIF
++
+diff --git a/src/m_argv.c b/src/m_argv.c
+index e8bfdd3db..e1046f8a7 100644
+--- a/src/m_argv.c
++++ b/src/m_argv.c
+@@ -16,6 +16,7 @@
+ #include "doomdef.h"
+ #include "command.h"
+ #include "m_argv.h"
++#include "m_misc.h"
+ 
+ /**	\brief number of arg
+ */
+@@ -166,7 +167,7 @@ void M_FindResponseFile(void)
+ 			if (!file)
+ 				I_Error("No more free memory for the response file");
+ 			if (fread(file, size, 1, handle) != 1)
+-				I_Error("Couldn't read response file because %s", strerror(ferror(handle)));
++				I_Error("Couldn't read response file because %s", M_FileError(handle));
+ 			fclose(handle);
+ 
+ 			// keep all the command line arguments following @responsefile
+diff --git a/src/m_cheat.c b/src/m_cheat.c
+index 6fa3ea113..05b851fef 100644
+--- a/src/m_cheat.c
++++ b/src/m_cheat.c
+@@ -109,7 +109,7 @@ static UINT8 cheatf_devmode(void)
+ 	G_SetGameModified(false);
+ 	for (i = 0; i < MAXUNLOCKABLES; i++)
+ 		unlockables[i].unlocked = true;
+-	devparm = TRUE;
++	devparm = true;
+ 	cv_debug |= 0x8000;
+ 
+ 	// Refresh secrets menu existing.
+diff --git a/src/m_fixed.h b/src/m_fixed.h
+index 4609913b7..654af6bea 100644
+--- a/src/m_fixed.h
++++ b/src/m_fixed.h
+@@ -206,14 +206,7 @@ FUNCMATH FUNCINLINE static ATTRINLINE fixed_t FixedDiv(fixed_t a, fixed_t b)
+ */
+ FUNCMATH FUNCINLINE static ATTRINLINE fixed_t FixedRem(fixed_t x, fixed_t y)
+ {
+-	const boolean n = x < 0;
+-	x = abs(x);
+-	while (x >= y)
+-		x -= y;
+-	if (n)
+-		return -x;
+-	else
+-		return x;
++	return x % y;
+ }
+ 
+ /**	\brief	The FixedSqrt function
+diff --git a/src/m_menu.c b/src/m_menu.c
+index a833ace21..e14d8c91d 100644
+--- a/src/m_menu.c
++++ b/src/m_menu.c
+@@ -260,6 +260,9 @@ menu_t OP_VideoOptionsDef, OP_VideoModeDef;
+ menu_t OP_OpenGLOptionsDef, OP_OpenGLFogDef, OP_OpenGLColorDef;
+ #endif
+ menu_t OP_SoundOptionsDef;
++#ifdef HAVE_OPENMPT
++menu_t OP_SoundAdvancedDef;
++#endif
+ 
+ //Misc
+ menu_t OP_DataOptionsDef, OP_ScreenshotOptionsDef, OP_EraseDataDef;
+@@ -1184,7 +1187,23 @@ static menuitem_t OP_SoundOptionsMenu[] =
+ 	{IT_STRING | IT_CVAR,  NULL,  "SFX"   , &cv_gamesounds,        50},
+ 	{IT_STRING | IT_CVAR,  NULL,  "Digital Music", &cv_gamedigimusic,     60},
+ 	{IT_STRING | IT_CVAR,  NULL,  "MIDI Music", &cv_gamemidimusic,        70},
++
++	{IT_STRING | IT_CVAR,  NULL,  "Play SFX if Unfocused", &cv_playsoundsifunfocused,  90},
++	{IT_STRING | IT_CVAR,  NULL,  "Play Music if Unfocused", &cv_playmusicifunfocused, 100},
++
++#ifdef HAVE_OPENMPT
++	{IT_STRING 	  | IT_SUBMENU, NULL, "Advanced Settings...", &OP_SoundAdvancedDef, 120},
++#endif
++};
++
++#ifdef HAVE_OPENMPT
++static menuitem_t OP_SoundAdvancedMenu[] =
++{
++	{IT_HEADER, NULL, "OpenMPT Settings", NULL, 10},
++
++	{IT_STRING | IT_CVAR, NULL, "Instrument Filter", &cv_modfilter, 22}
+ };
++#endif
+ 
+ static menuitem_t OP_DataOptionsMenu[] =
+ {
+@@ -1262,18 +1281,19 @@ static menuitem_t OP_GameOptionsMenu[] =
+ 	{IT_STRING | IT_CVAR, NULL, "Show HUD",               &cv_showhud,     50},
+ 	{IT_STRING | IT_CVAR | IT_CV_SLIDER,
+ 	                      NULL, "HUD Visibility",         &cv_translucenthud, 60},
+-	{IT_STRING | IT_CVAR, NULL, "Timer Display",          &cv_timetic,     70},
+-	{IT_STRING | IT_CVAR, NULL, "Always Compact Rankings",          &cv_compactscoreboard,     80},
++	{IT_STRING | IT_CVAR, NULL, "Timer/Rings Display",    &cv_timetic,     70},
++	{IT_STRING | IT_CVAR, NULL, "Score Display",          &cv_scorepos,     80},
++	{IT_STRING | IT_CVAR, NULL, "Always Compact Rankings",          &cv_compactscoreboard,     90},
+ #ifdef SEENAMES
+-	{IT_STRING | IT_CVAR, NULL, "HUD Player Names",       &cv_seenames,    90},
++	{IT_STRING | IT_CVAR, NULL, "HUD Player Names",       &cv_seenames,    100},
+ #endif
+-	{IT_STRING | IT_CVAR, NULL, "Log Hazard Damage",      &cv_hazardlog,   100},
++	{IT_STRING | IT_CVAR, NULL, "Log Hazard Damage",      &cv_hazardlog,   110},
+ 
+-	{IT_STRING | IT_CVAR, NULL, "Console Back Color",     &cons_backcolor, 110},
+-	{IT_STRING | IT_CVAR, NULL, "Console Text Size",      &cv_constextsize,120},
+-	{IT_STRING | IT_CVAR, NULL, "Uppercase Console",      &cv_allcaps,     130},
++	{IT_STRING | IT_CVAR, NULL, "Console Back Color",     &cons_backcolor, 120},
++	{IT_STRING | IT_CVAR, NULL, "Console Text Size",      &cv_constextsize,130},
++	{IT_STRING | IT_CVAR, NULL, "Uppercase Console",      &cv_allcaps,     140},
+ 
+-	{IT_STRING | IT_CVAR, NULL, "Title Screen Demos",     &cv_rollingdemos, 140},
++	{IT_STRING | IT_CVAR, NULL, "Title Screen Demos",     &cv_rollingdemos, 150},
+ };
+ 
+ static menuitem_t OP_ChatOptionsMenu[] =
+@@ -1692,6 +1712,9 @@ menu_t OP_VideoModeDef =
+ 	NULL
+ };
+ menu_t OP_SoundOptionsDef = DEFAULTMENUSTYLE("M_SOUND", OP_SoundOptionsMenu, &OP_MainDef, 60, 30);
++#ifdef HAVE_OPENMPT
++menu_t OP_SoundAdvancedDef = DEFAULTMENUSTYLE("M_SOUND", OP_SoundAdvancedMenu, &OP_SoundOptionsDef, 30, 30);
++#endif
+ menu_t OP_GameOptionsDef = DEFAULTMENUSTYLE("M_GAME", OP_GameOptionsMenu, &OP_MainDef, 30, 30);
+ menu_t OP_ServerOptionsDef = DEFAULTMENUSTYLE("M_SERVER", OP_ServerOptionsMenu, &OP_MainDef, 30, 30);
+ 
+@@ -2086,6 +2109,9 @@ boolean M_Responder(event_t *ev)
+ 	|| gamestate == GS_CREDITS || gamestate == GS_EVALUATION)
+ 		return false;
+ 
++	if (CON_Ready())
++		return false;
++
+ 	if (noFurtherInput)
+ 	{
+ 		// Ignore input after enter/escape/other buttons
+@@ -2277,10 +2303,7 @@ boolean M_Responder(event_t *ev)
+ 
+ 			case KEY_ESCAPE: // Pop up menu
+ 				if (chat_on)
+-				{
+ 					HU_clearChatChars();
+-					chat_on = false;
+-				}
+ 				else
+ 					M_StartControlPanel();
+ 				return true;
+@@ -2440,6 +2463,7 @@ boolean M_Responder(event_t *ev)
+ 				{
+ 					// D_StartTitle does its own wipe, since GS_TIMEATTACK is now a complete gamestate.
+ 					menuactive = false;
++					I_UpdateMouseGrab();
+ 					D_StartTitle();
+ 				}
+ 				else
+@@ -2464,6 +2488,7 @@ boolean M_Responder(event_t *ev)
+ 			return false;
+ 
+ 		default:
++			CON_Responder(ev);
+ 			break;
+ 	}
+ 
+@@ -2637,7 +2662,7 @@ void M_StartControlPanel(void)
+ 		itemOn = mpause_continue;
+ 	}
+ 
+-	CON_ToggleOff(); // move away console
++	//CON_ToggleOff(); // move away console
+ }
+ 
+ void M_EndModeAttackRun(void)
+@@ -2663,6 +2688,8 @@ void M_ClearMenus(boolean callexitmenufunc)
+ 	if (currentMenu == &MessageDef) // Oh sod off!
+ 		currentMenu = &MainDef; // Not like it matters
+ 	menuactive = false;
++
++	I_UpdateMouseGrab();
+ }
+ 
+ //
+@@ -8015,3 +8042,4 @@ static void M_HandleFogColor(INT32 choice)
+ 	}
+ }
+ #endif
++
+diff --git a/src/m_misc.c b/src/m_misc.c
+index c5e4fa21c..e8d053f9a 100644
+--- a/src/m_misc.c
++++ b/src/m_misc.c
+@@ -23,6 +23,8 @@
+ #include <unistd.h>
+ #endif
+ 
++#include <errno.h>
++
+ // Extended map support.
+ #include <ctype.h>
+ 
+@@ -1119,12 +1121,8 @@ void M_StartMovie(void)
+ 	switch (cv_moviemode.value)
+ 	{
+ 		case MM_GIF:
+-			if (rendermode == render_soft)
+-			{
+-				moviemode = M_StartMovieGIF(pathname);
+-				break;
+-			}
+-			/* FALLTHRU */
++			moviemode = M_StartMovieGIF(pathname);
++			break;
+ 		case MM_APNG:
+ 			moviemode = M_StartMovieAPNG(pathname);
+ 			break;
+@@ -2371,3 +2369,13 @@ void M_SetupMemcpy(void)
+ 	M_Memcpy = cpu_cpy;
+ #endif
+ }
++
++/** Return the appropriate message for a file error or end of file.
++*/
++const char *M_FileError(FILE *fp)
++{
++	if (ferror(fp))
++		return strerror(errno);
++	else
++		return "end-of-file";
++}
+diff --git a/src/m_misc.h b/src/m_misc.h
+index 7dd8baabf..72725ec52 100644
+--- a/src/m_misc.h
++++ b/src/m_misc.h
+@@ -100,6 +100,8 @@ void strcatbf(char *s1, const char *s2, const char *s3);
+ 
+ void M_SetupMemcpy(void);
+ 
++const char *M_FileError(FILE *handle);
++
+ // counting bits, for weapon ammo code, usually
+ FUNCMATH UINT8 M_CountBits(UINT32 num, UINT8 size);
+ 
+diff --git a/src/mserv.h b/src/mserv.h
+index 09cd4f089..f6103f9fc 100644
+--- a/src/mserv.h
++++ b/src/mserv.h
+@@ -68,7 +68,7 @@ extern consvar_t cv_masterserver, cv_servername;
+ // < 0 to not connect (usually -1) (offline mode)
+ // == 0 to show all rooms, not a valid hosting room
+ // anything else is whatever room the MS assigns to that number (online mode)
+-INT16 ms_RoomId;
++extern INT16 ms_RoomId;
+ 
+ const char *GetMasterServerPort(void);
+ const char *GetMasterServerIP(void);
+@@ -94,3 +94,4 @@ extern msg_rooms_t room_list[NUM_LIST_ROOMS+1];
+ void AddMServCommands(void);
+ 
+ #endif
++
+diff --git a/src/nds/Makefile.cfg b/src/nds/Makefile.cfg
+deleted file mode 100644
+index c2d915924..000000000
+--- a/src/nds/Makefile.cfg
++++ /dev/null
+@@ -1,31 +0,0 @@
+-# Adapted in part from devkitPRO makefiles.
+-
+-NOMD5=1
+-
+-# Check if DEVKITARM is set in the environment. If so, continue with compilation.
+-.SUFFIXES:
+-
+-ifeq ($(strip $(DEVKITARM)),)
+-$(error "Please set DEVKITARM in your environment. export DEVKITARM=<path to>devkitARM")
+-endif
+-
+-# use absolute paths because changing PATH variable breaks distcc
+-PREFIX	:= $(DEVKITARM)/bin/arm-eabi
+-NDSTOOL	:= $(DEVKITARM)/bin/ndstool
+-
+-# Disable same warning flags
+-WFLAGS+=-Wno-inline -Wno-cast-align
+-WFLAGS+=-Wno-shadow -Wno-char-subscripts
+-WFLAGS+=-Wno-declaration-after-statement
+-WFLAGS+=-Wno-old-style-definition
+-WFLAGS+=-Wno-undef
+-WFLAGS+=-Wno-unsuffixed-float-constants
+-
+-ifndef NOHW
+-	OBJS+=$(OBJDIR)/r_nds3d.o
+-endif
+-
+-ARCH = -mthumb -mthumb-interwork
+-LDFLAGS += -L$(DEVKITPRO)/libnds/lib -specs=ds_arm9.specs -g $(ARCH) -mno-fpu
+-LIBS += -lfat -lnds9
+-CFLAGS += -D_NDS -DARM9 -I$(DEVKITPRO)/libnds/include $(ARCH) -march=armv5te -mtune=arm946e-s -fomit-frame-pointer -ffast-math
+diff --git a/src/nds/i_cdmus.c b/src/nds/i_cdmus.c
+deleted file mode 100644
+index f3f703667..000000000
+--- a/src/nds/i_cdmus.c
++++ /dev/null
+@@ -1,37 +0,0 @@
+-#include "../command.h"
+-#include "../s_sound.h"
+-#include "../i_sound.h"
+-
+-//
+-// CD MUSIC I/O
+-//
+-
+-UINT8 cdaudio_started = 0;
+-
+-consvar_t cd_volume = {"cd_volume","31",CV_SAVE,soundvolume_cons_t, NULL, 0, NULL, NULL, 0, 0, NULL};
+-consvar_t cdUpdate  = {"cd_update","1",CV_SAVE, NULL, NULL, 0, NULL, NULL, 0, 0, NULL};
+-
+-
+-void I_InitCD(void){}
+-
+-void I_StopCD(void){}
+-
+-void I_PauseCD(void){}
+-
+-void I_ResumeCD(void){}
+-
+-void I_ShutdownCD(void){}
+-
+-void I_UpdateCD(void){}
+-
+-void I_PlayCD(UINT8 track, UINT8 looping)
+-{
+-	(void)track;
+-	(void)looping;
+-}
+-
+-boolean I_SetVolumeCD(int volume)
+-{
+-	(void)volume;
+-	return false;
+-}
+diff --git a/src/nds/i_main.c b/src/nds/i_main.c
+deleted file mode 100644
+index 292a5f91d..000000000
+--- a/src/nds/i_main.c
++++ /dev/null
+@@ -1,25 +0,0 @@
+-#include "../doomdef.h"
+-#include "../d_main.h"
+-#include "../m_argv.h"
+-#include "../i_system.h"
+-
+-int main(int argc, char **argv)
+-{
+-	myargc = argc;
+-	myargv = argv; /// \todo pull out path to exe from this string
+-
+-	CONS_Printf("I_StartupSystem...");
+-	I_StartupSystem();
+-
+-	// startup SRB2
+-	CONS_Printf("Setting up SRB2...\n");
+-	D_SRB2Main();
+-	CONS_Printf("Entering main game loop...\n");
+-	// never return
+-	D_SRB2Loop();
+-
+-	// return to OS
+-#ifndef __GNUC__
+-	return 0;
+-#endif
+-}
+diff --git a/src/nds/i_net.c b/src/nds/i_net.c
+deleted file mode 100644
+index f6e642022..000000000
+--- a/src/nds/i_net.c
++++ /dev/null
+@@ -1,6 +0,0 @@
+-#include "../i_net.h"
+-
+-boolean I_InitNetwork(void)
+-{
+-	return false;
+-}
+diff --git a/src/nds/i_sound.c b/src/nds/i_sound.c
+deleted file mode 100644
+index a17c7f66a..000000000
+--- a/src/nds/i_sound.c
++++ /dev/null
+@@ -1,151 +0,0 @@
+-#include "../i_sound.h"
+-
+-UINT8 sound_started = 0;
+-
+-void *I_GetSfx(sfxinfo_t *sfx)
+-{
+-	(void)sfx;
+-	return NULL;
+-}
+-
+-void I_FreeSfx(sfxinfo_t *sfx)
+-{
+-	(void)sfx;
+-}
+-
+-void I_StartupSound(void){}
+-
+-void I_ShutdownSound(void){}
+-
+-//
+-//  SFX I/O
+-//
+-
+-INT32 I_StartSound(sfxenum_t id, INT32 vol, INT32 sep, INT32 pitch, INT32 priority, INT32 channel)
+-{
+-	(void)id;
+-	(void)vol;
+-	(void)sep;
+-	(void)pitch;
+-	(void)priority;
+-	(void)channel;
+-	return -1;
+-}
+-
+-void I_StopSound(INT32 handle)
+-{
+-	(void)handle;
+-}
+-
+-INT32 I_SoundIsPlaying(INT32 handle)
+-{
+-	(void)handle;
+-	return false;
+-}
+-
+-void I_UpdateSoundParams(INT32 handle, INT32 vol, INT32 sep, INT32 pitch)
+-{
+-	(void)handle;
+-	(void)vol;
+-	(void)sep;
+-	(void)pitch;
+-}
+-
+-void I_SetSfxVolume(INT32 volume)
+-{
+-	(void)volume;
+-}
+-
+-//
+-//  MUSIC I/O
+-//
+-UINT8 music_started = 0;
+-
+-void I_InitMusic(void){}
+-
+-void I_ShutdownMusic(void){}
+-
+-void I_PauseSong(INT32 handle)
+-{
+-	(void)handle;
+-}
+-
+-void I_ResumeSong(INT32 handle)
+-{
+-	(void)handle;
+-}
+-
+-//
+-//  MIDI I/O
+-//
+-
+-UINT8 midimusic_started = 0;
+-
+-void I_InitMIDIMusic(void){}
+-
+-void I_ShutdownMIDIMusic(void){}
+-
+-void I_SetMIDIMusicVolume(INT32 volume)
+-{
+-	(void)volume;
+-}
+-
+-INT32 I_RegisterSong(void *data, size_t len)
+-{
+-	(void)data;
+-	(void)len;
+-	return -1;
+-}
+-
+-boolean I_PlaySong(INT32 handle, INT32 looping)
+-{
+-	(void)handle;
+-	(void)looping;
+-	return false;
+-}
+-
+-void I_StopSong(INT32 handle)
+-{
+-	(void)handle;
+-}
+-
+-void I_UnRegisterSong(INT32 handle)
+-{
+-	(void)handle;
+-}
+-
+-//
+-//  DIGMUSIC I/O
+-//
+-
+-UINT8 digmusic_started = 0;
+-
+-void I_InitDigMusic(void){}
+-
+-void I_ShutdownDigMusic(void){}
+-
+-boolean I_StartDigSong(const char *musicname, INT32 looping)
+-{
+-	(void)musicname;
+-	(void)looping;
+-	return false;
+-}
+-
+-void I_StopDigSong(void){}
+-
+-void I_SetDigMusicVolume(INT32 volume)
+-{
+-	(void)volume;
+-}
+-
+-boolean I_SetSongSpeed(float speed)
+-{
+-	(void)speed;
+-	return false;
+-}
+-
+-boolean I_SetSongTrack(int track)
+-{
+-	(void)track;
+-	return false;
+-}
+diff --git a/src/nds/i_system.c b/src/nds/i_system.c
+deleted file mode 100644
+index 3e5c4b8c6..000000000
+--- a/src/nds/i_system.c
++++ /dev/null
+@@ -1,286 +0,0 @@
+-#include <nds.h>
+-#include <fat.h>
+-
+-#include "../doomdef.h"
+-#include "../d_main.h"
+-#include "../i_system.h"
+-#include "../i_joy.h"
+-
+-UINT8 graphics_started = 0;
+-
+-UINT8 keyboard_started = 0;
+-
+-static volatile tic_t ticcount;
+-
+-
+-UINT32 I_GetFreeMem(UINT32 *total)
+-{
+-	*total = 0;
+-	return 0;
+-}
+-
+-tic_t I_GetTime(void)
+-{
+-	return ticcount;
+-}
+-
+-void I_Sleep(void){}
+-
+-void I_GetEvent(void)
+-{
+-	// Mappings of DS keys to SRB2 keys
+-	UINT32 dskeys[] =
+-	{
+-		KEY_A,
+-		KEY_B,
+-		KEY_X,
+-		KEY_Y,
+-		KEY_L,
+-		KEY_R,
+-		KEY_START,
+-		KEY_SELECT
+-	};
+-
+-	event_t event;
+-	UINT32 held, up, down;
+-	UINT32 i;
+-
+-	// Check how the state has changed since last time
+-	scanKeys();
+-
+-	// For the d-pad, we only care about the current state
+-	held = keysHeld();
+-	event.type = ev_joystick;
+-	event.data1 = 0;	// First (and only) axis set
+-
+-	if (held & KEY_LEFT) event.data2 = -1;
+-	else if (held & KEY_RIGHT) event.data2 = 1;
+-	else event.data2 = 0;
+-
+-	if (held & KEY_UP) event.data3 = -1;
+-	else if (held & KEY_DOWN) event.data3 = 1;
+-	else event.data3 = 0;
+-
+-	D_PostEvent(&event);
+-
+-	// For the buttons, we need to report changes in state
+-	up = keysUp();
+-	down = keysDown();
+-	for (i = 0; i < sizeof(dskeys)/sizeof(dskeys[0]); i++)
+-	{
+-		// Has this button's state changed?
+-		if ((up | down) & dskeys[i])
+-		{
+-			event.type = (up & dskeys[i]) ? ev_keyup : ev_keydown;
+-			event.data1 = KEY_JOY1 + i;
+-			D_PostEvent(&event);
+-		}
+-	}
+-}
+-
+-void I_OsPolling(void)
+-{
+-	I_GetEvent();
+-}
+-
+-ticcmd_t *I_BaseTiccmd(void)
+-{
+-	static ticcmd_t emptyticcmd;
+-	return &emptyticcmd;
+-}
+-
+-ticcmd_t *I_BaseTiccmd2(void)
+-{
+-	static ticcmd_t emptyticcmd2;
+-	return &emptyticcmd2;
+-}
+-
+-void I_Quit(void)
+-{
+-	exit(0);
+-}
+-
+-void I_Error(const char *error, ...)
+-{
+-	va_list argptr;
+-
+-        va_start(argptr, error);
+-        viprintf(error, argptr);
+-        va_end(argptr);
+-
+-	for(;;);
+-}
+-
+-void I_Tactile(FFType Type, const JoyFF_t *Effect)
+-{
+-	(void)Type;
+-	(void)Effect;
+-}
+-
+-void I_Tactile2(FFType Type, const JoyFF_t *Effect)
+-{
+-	(void)Type;
+-	(void)Effect;
+-}
+-
+-void I_JoyScale(void){}
+-
+-void I_JoyScale2(void){}
+-
+-void I_InitJoystick(void)
+-{
+-	Joystick.bGamepadStyle = true;
+-}
+-
+-void I_InitJoystick2(void){}
+-
+-INT32 I_NumJoys(void)
+-{
+-	return 0;
+-}
+-
+-const char *I_GetJoyName(INT32 joyindex)
+-{
+-	(void)joyindex;
+-	return NULL;
+-}
+-
+-void I_SetupMumble(void)
+-{
+-}
+-
+-#ifndef NOMUMBLE
+-void I_UpdateMumble(const mobj_t *mobj, const listener_t listener)
+-{
+-	(void)mobj;
+-	(void)listener;
+-}
+-#endif
+-
+-void I_OutputMsg(const char *error, ...)
+-{
+-	va_list argptr;
+-
+-	va_start(argptr, error);
+-	viprintf(error, argptr);
+-	va_end(argptr);
+-}
+-
+-void I_StartupMouse(void){}
+-
+-void I_StartupMouse2(void){}
+-
+-void I_StartupKeyboard(void){}
+-
+-INT32 I_GetKey(void)
+-{
+-	return 0;
+-}
+-
+-static void NDS_VBlankHandler(void)
+-{
+-	ticcount++;
+-}
+-
+-void I_StartupTimer(void)
+-{
+-	irqSet(IRQ_VBLANK, NDS_VBlankHandler);
+-}
+-
+-void I_AddExitFunc(void (*func)())
+-{
+-	(void)func;
+-}
+-
+-void I_RemoveExitFunc(void (*func)())
+-{
+-	(void)func;
+-}
+-
+-// Adapted in part from the devkitPro examples.
+-INT32 I_StartupSystem(void)
+-{
+-	lcdMainOnTop();
+-
+-	videoSetModeSub(MODE_0_2D);
+-	vramSetBankC(VRAM_C_MAIN_BG);	// Get this mapped *out* of the sub BG
+-	vramSetBankI(VRAM_I_SUB_BG_0x06208000);
+-
+-	// The background VRAM that's mapped starts at 0x06208000.
+-	// The map base is specified in an offset of multiples of 2 KB
+-	// from 0x06200000, and the tile base in multiples of 16 KB.
+-	// We put the tiles at the start and the map 2 KB from the end
+-	// (i.e. 14 KB from the start).
+-	// The map base is then at 0x0620B800 = 0x06200000 + 16 * 0x800 + 7 * 0x800,
+-	// and the tile base is at 0x06208000 = 0x06200000 + 2 * 0x4000.
+-	consoleInit(NULL, 0, BgType_Text4bpp, BgSize_T_256x256, 16+7, 2, false, true);
+-
+-	// start FAT filesystem code, required for reading SD card
+-	if(!fatInitDefault())
+-		I_Error("Couldn't init FAT.");
+-
+-	return 0;
+-}
+-
+-void I_ShutdownSystem(void){}
+-
+-void I_GetDiskFreeSpace(INT64* freespace)
+-{
+-	*freespace = 0;
+-}
+-
+-char *I_GetUserName(void)
+-{
+-	return NULL;
+-}
+-
+-INT32 I_mkdir(const char *dirname, INT32 unixright)
+-{
+-	(void)dirname;
+-	(void)unixright;
+-	return -1;
+-}
+-
+-const CPUInfoFlags *I_CPUInfo(void)
+-{
+-	return NULL;
+-}
+-
+-const char *I_LocateWad(void)
+-{
+-	return NULL;
+-}
+-
+-void I_GetJoystickEvents(void){}
+-
+-void I_GetJoystick2Events(void){}
+-
+-void I_GetMouseEvents(void){}
+-
+-char *I_GetEnv(const char *name)
+-{
+-	(void)name;
+-	return NULL;
+-}
+-
+-INT32 I_PutEnv(char *variable)
+-{
+-	(void)variable;
+-	return -1;
+-}
+-
+-INT32 I_ClipboardCopy(const char *data, size_t size)
+-{
+-	(void)data;
+-	(void)size;
+-	return -1;
+-}
+-
+-char *I_ClipboardPaste(void)
+-{
+-	return NULL;
+-}
+-
+-void I_RegisterSysCommands(void) {}
+-
+-#include "../sdl/dosstr.c"
+diff --git a/src/nds/i_video.c b/src/nds/i_video.c
+deleted file mode 100644
+index 3dfb99557..000000000
+--- a/src/nds/i_video.c
++++ /dev/null
+@@ -1,148 +0,0 @@
+-// Emacs style mode select   -*- C++ -*-
+-//-----------------------------------------------------------------------------
+-//
+-// Copyright (C) 1993-1996 by id Software, Inc.
+-// Portions Copyright (C) 1998-2000 by DooM Legacy Team.
+-//
+-// This program is free software; you can redistribute it and/or
+-// modify it under the terms of the GNU General Public License
+-// as published by the Free Software Foundation; either version 2
+-// of the License, or (at your option) any later version.
+-//
+-// This program is distributed in the hope that it will be useful,
+-// but WITHOUT ANY WARRANTY; without even the implied warranty of
+-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+-// GNU General Public License for more details.
+-//-----------------------------------------------------------------------------
+-/// \file
+-/// \brief SRB2 graphics stuff for NDS
+-
+-
+-#include "../doomdef.h"
+-#include "../command.h"
+-#include "../i_video.h"
+-
+-#include "../hardware/hw_drv.h"
+-#include "../hardware/hw_main.h"
+-#include "r_nds3d.h"
+-
+-rendermode_t rendermode = render_opengl;
+-
+-boolean highcolor = false;
+-
+-boolean allow_fullscreen = false;
+-
+-consvar_t cv_vidwait = {"vid_wait", "On", CV_SAVE, CV_OnOff, NULL, 0, NULL, NULL, 0, 0, NULL};
+-
+-void I_StartupGraphics(void)
+-{
+-	vid.width = 256;
+-	vid.height = 192;
+-	vid.bpp = 1;
+-	vid.rowbytes = vid.width * vid.bpp;
+-	vid.recalc = true;
+-
+-	HWD.pfnInit             = NDS3D_Init;
+-	HWD.pfnShutdown         = NDS3D_Shutdown;
+-	HWD.pfnFinishUpdate     = NDS3D_FinishUpdate;
+-	HWD.pfnDraw2DLine       = NDS3D_Draw2DLine;
+-	HWD.pfnDrawPolygon      = NDS3D_DrawPolygon;
+-	HWD.pfnSetBlend         = NDS3D_SetBlend;
+-	HWD.pfnClearBuffer      = NDS3D_ClearBuffer;
+-	HWD.pfnSetTexture       = NDS3D_SetTexture;
+-	HWD.pfnReadRect         = NDS3D_ReadRect;
+-	HWD.pfnGClipRect        = NDS3D_GClipRect;
+-	HWD.pfnClearMipMapCache = NDS3D_ClearMipMapCache;
+-	HWD.pfnSetSpecialState  = NDS3D_SetSpecialState;
+-	HWD.pfnSetPalette       = NDS3D_SetPalette;
+-	HWD.pfnGetTextureUsed   = NDS3D_GetTextureUsed;
+-	HWD.pfnDrawMD2          = NDS3D_DrawMD2;
+-	HWD.pfnDrawMD2i         = NDS3D_DrawMD2i;
+-	HWD.pfnSetTransform     = NDS3D_SetTransform;
+-	HWD.pfnGetRenderVersion = NDS3D_GetRenderVersion;
+-
+-	videoSetMode(MODE_0_3D);
+-	vramSetBankA(VRAM_A_TEXTURE);
+-	vramSetBankB(VRAM_B_TEXTURE);
+-	vramSetBankC(VRAM_C_TEXTURE);
+-	vramSetBankD(VRAM_D_TEXTURE);
+-	vramSetBankE(VRAM_E_TEX_PALETTE);
+-
+-	glInit();
+-
+-	glEnable(GL_TEXTURE_2D);
+-
+-	glClearColor(16,16,16,31);
+-	glClearPolyID(63);
+-	glClearDepth(0x7FFF);
+-
+-	glViewport(0, 0, vid.width - 1, vid.height - 1);
+-
+-	glMatrixMode(GL_PROJECTION);
+-	glLoadIdentity();
+-
+-	gluPerspective(fov, ASPECT_RATIO, NEAR_CLIPPING_PLANE, FAR_CLIPPING_PLANE);
+-
+-	glMatrixMode(GL_MODELVIEW);
+-	glLoadIdentity();
+-	glScalef(1.0f, 1.0f, -1.0f);
+-
+-	HWD.pfnInit(I_Error);
+-	HWR_Startup();
+-}
+-
+-void I_ShutdownGraphics(void){}
+-
+-void I_SetPalette(RGBA_t *palette)
+-{
+-	(void)palette;
+-}
+-
+-INT32 VID_NumModes(void)
+-{
+-	return 0;
+-}
+-
+-INT32 VID_GetModeForSize(INT32 w, INT32 h)
+-{
+-	(void)w;
+-	(void)h;
+-	return 0;
+-}
+-
+-void VID_PrepareModeList(void){}
+-
+-INT32 VID_SetMode(INT32 modenum)
+-{
+-	(void)modenum;
+-	return 0;
+-}
+-
+-const char *VID_GetModeName(INT32 modenum)
+-{
+-	(void)modenum;
+-	return NULL;
+-}
+-
+-void I_UpdateNoBlit(void){}
+-
+-void I_FinishUpdate(void)
+-{
+-	HWD.pfnFinishUpdate(true);
+-}
+-
+-void I_UpdateNoVsync(void) {}
+-
+-void I_WaitVBL(INT32 count)
+-{
+-	(void)count;
+-}
+-
+-void I_ReadScreen(UINT8 *scr)
+-{
+-	(void)scr;
+-}
+-
+-void I_BeginRead(void){}
+-
+-void I_EndRead(void){}
+diff --git a/src/nds/r_nds3d.c b/src/nds/r_nds3d.c
+deleted file mode 100644
+index dbdcec158..000000000
+--- a/src/nds/r_nds3d.c
++++ /dev/null
+@@ -1,389 +0,0 @@
+-// Emacs style mode select   -*- C++ -*-
+-//-----------------------------------------------------------------------------
+-//
+-// Copyright (C) 1993-1996 by id Software, Inc.
+-// Portions Copyright (C) 1998-2000 by DooM Legacy Team.
+-//
+-// This program is free software; you can redistribute it and/or
+-// modify it under the terms of the GNU General Public License
+-// as published by the Free Software Foundation; either version 2
+-// of the License, or (at your option) any later version.
+-//
+-// This program is distributed in the hope that it will be useful,
+-// but WITHOUT ANY WARRANTY; without even the implied warranty of
+-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+-// GNU General Public License for more details.
+-//-----------------------------------------------------------------------------
+-/// \file
+-/// \brief NDS 3D API for SRB2.
+-//
+-// In an ideal world, we would share as much code as possible with r_opengl.c,
+-// but this will do for now.
+-
+-#include "../doomtype.h"
+-#include "../hardware/hw_defs.h"
+-#include "../hardware/hw_dll.h"
+-#include "../hardware/hw_md2.h"
+-#include "r_nds3d.h"
+-
+-static I_Error_t I_Error_GL = NULL;
+-
+-#define NOTEXTURE_NUM     0     // small white texture
+-#define FIRST_TEX_AVAIL   (NOTEXTURE_NUM + 1)
+-#define MAX_SRB2_TEXTURES      256
+-
+-FCOORD NEAR_CLIPPING_PLANE = 0.9f;
+-float fov = 90.0f;
+-
+-static FBITFIELD CurrentPolyFlags = 0xFFFFFFFF;
+-static UINT32 CurrentGLPolyFmt = POLY_CULL_NONE;
+-static UINT8 CurrentPolyAlpha = 31;
+-static UINT16 myPaletteData[256];
+-static FTextureInfo* gr_cachetail = NULL;
+-static FTextureInfo* gr_cachehead = NULL;
+-static INT32 NextTexAvail = FIRST_TEX_AVAIL;
+-static UINT32 tex_downloaded = 0;
+-static INT32 texids[MAX_SRB2_TEXTURES];
+-static boolean scalehack = false;
+-
+-
+-static void GenerateTextureNames(void)
+-{
+-	glGenTextures(MAX_SRB2_TEXTURES - 1, texids + 1);
+-	texids[NOTEXTURE_NUM] = 0;
+-}
+-
+-static void Flush(void)
+-{
+-	// Delete all textures at once, since libnds's glDeleteTextures seems to be buggy.
+-	glResetTextures();
+-	GenerateTextureNames();
+-	while (gr_cachehead)
+-	{
+-		gr_cachehead->downloaded = 0;
+-		gr_cachehead = gr_cachehead->nextmipmap;
+-	}
+-	gr_cachetail = gr_cachehead = NULL;
+-	NextTexAvail = FIRST_TEX_AVAIL;
+-	tex_downloaded = 0;
+-}
+-
+-static void SetNoTexture(void)
+-{
+-	// Set small white texture.
+-	if (tex_downloaded != NOTEXTURE_NUM)
+-	{
+-		glBindTexture(GL_TEXTURE_2D, texids[NOTEXTURE_NUM]);
+-		tex_downloaded = NOTEXTURE_NUM;
+-	}
+-}
+-
+-
+-static void SetAlpha(UINT8 alpha)
+-{
+-	CurrentPolyAlpha = alpha >> 3;
+-	glPolyFmt(CurrentGLPolyFmt | POLY_ALPHA(CurrentPolyAlpha));
+-}
+-
+-
+-
+-boolean NDS3D_Init(I_Error_t ErrorFunction)
+-{
+-	I_Error_GL = ErrorFunction;
+-	glPolyFmt(CurrentGLPolyFmt | POLY_ALPHA(CurrentPolyAlpha));
+-	GenerateTextureNames();
+-	return true;
+-}
+-
+-void NDS3D_Shutdown(void) {}
+-
+-void NDS3D_SetPalette(RGBA_t *ppal, RGBA_t *pgamma)
+-{
+-	INT32 i;
+-
+-	for (i = 0; i < 256; i++)
+-	{
+-		UINT8 red   = (UINT8)min((ppal[i].s.red*pgamma->s.red)/127,     255) >> 3;
+-		UINT8 green = (UINT8)min((ppal[i].s.green*pgamma->s.green)/127, 255) >> 3;
+-		UINT8 blue  = (UINT8)min((ppal[i].s.blue*pgamma->s.blue)/127,   255) >> 3;
+-
+-		myPaletteData[i] = ARGB16(ppal[i].s.alpha ? 1 : 0, red, green, blue);
+-	}
+-
+-	Flush();
+-}
+-
+-void NDS3D_FinishUpdate(INT32 waitvbl)
+-{
+-	(void)waitvbl;
+-
+-	glFlush(0);
+-}
+-
+-void NDS3D_Draw2DLine(F2DCoord *v1, F2DCoord *v2, RGBA_t Color)
+-{
+-	(void)v1;
+-	(void)v2;
+-	(void)Color;
+-}
+-
+-void NDS3D_DrawPolygon(FSurfaceInfo *pSurf, FOutVector *pOutVerts, FUINT iNumPts, FBITFIELD PolyFlags)
+-{
+-	FUINT i;
+-
+-	NDS3D_SetBlend(PolyFlags);
+-
+-	// If Modulated, mix the surface colour to the texture
+-	if ((CurrentPolyFlags & PF_Modulated) && pSurf)
+-	{
+-		glColor3b(pSurf->FlatColor.s.red, pSurf->FlatColor.s.green, pSurf->FlatColor.s.blue);
+-		SetAlpha(pSurf->FlatColor.s.alpha);
+-	}
+-
+-	// libnds doesn't have GL_TRIANGLE_FAN, so use GL_TRIANGLE_STRIP instead
+-	glBegin(GL_TRIANGLE_STRIP);
+-	for (i = 0; i < iNumPts; i++)
+-	{
+-		FUINT index = (i & 1) ? (i >> 1) : (iNumPts - 1 - (i >> 1));
+-		FLOAT x, y, z;
+-
+-		if (scalehack)
+-		{
+-			x = pOutVerts[index].x/4096.0f;
+-			y = pOutVerts[index].y/4096.0f;
+-			z = pOutVerts[index].z/4096.0f;
+-		}
+-		else
+-		{
+-			x = pOutVerts[index].x;
+-			y = pOutVerts[index].y;
+-			z = pOutVerts[index].z;
+-		}
+-
+-		glTexCoord2f(pOutVerts[index].sow, pOutVerts[index].tow);
+-		glVertex3f(x,y,z);
+-	}
+-	glEnd();
+-}
+-
+-void NDS3D_SetBlend(FBITFIELD PolyFlags)
+-{
+-	FBITFIELD Xor = PolyFlags ^ CurrentPolyFlags;
+-
+-	if (Xor & (PF_NoTexture|PF_Modulated))
+-	{
+-		if (Xor&PF_Modulated)
+-		{
+-			if(!(PolyFlags & PF_Modulated))
+-			{
+-				glColor3b(255, 255, 255);
+-				CurrentPolyAlpha = 31;
+-			}
+-		}
+-
+-		if (PolyFlags & PF_NoTexture)
+-		{
+-			SetNoTexture();
+-		}
+-	}
+-
+-	CurrentPolyFlags = PolyFlags;
+-	glPolyFmt(CurrentGLPolyFmt | POLY_ALPHA(CurrentPolyAlpha));
+-}
+-
+-void NDS3D_ClearBuffer(FBOOLEAN ColorMask, FBOOLEAN DepthMask, FRGBAFloat *ClearColor)
+-{
+-	(void)ClearColor;
+-
+-	if (ColorMask && ClearColor)
+-	{
+-		// TODO: Fixed-ify
+-		glClearColor((uint8)(ClearColor->red*31),
+-			(uint8)(ClearColor->green*31),
+-			(uint8)(ClearColor->blue*31),
+-			(uint8)(ClearColor->alpha*31));
+-	}
+-
+-	if (DepthMask)
+-		glClearDepth(GL_MAX_DEPTH);
+-
+-	NDS3D_SetBlend(DepthMask ? PF_Occlude | CurrentPolyFlags : CurrentPolyFlags&~PF_Occlude);
+-}
+-
+-void NDS3D_SetTexture(FTextureInfo *TexInfo)
+-{
+-	if (!TexInfo)
+-	{
+-		SetNoTexture();
+-		return;
+-	}
+-	else if (TexInfo->downloaded)
+-	{
+-		if (TexInfo->downloaded != tex_downloaded)
+-		{
+-			glBindTexture(GL_TEXTURE_2D, texids[TexInfo->downloaded]);
+-			tex_downloaded = TexInfo->downloaded;
+-		}
+-	}
+-	else if (TexInfo->grInfo.data)
+-	{
+-		UINT8 wtype, htype;
+-		INT32 texparam = GL_TEXTURE_COLOR0_TRANSPARENT;
+-
+-		// We rely on the numerical values of GL_TEXTURE_SIZE_ENUM here.
+-		wtype = TEXTURE_SIZE_8;
+-		while(TexInfo->width > 1 << (wtype + 3)) wtype++;
+-
+-		htype = TEXTURE_SIZE_8;
+-		while(TexInfo->height > 1 << (htype + 3)) htype++;
+-
+-		TexInfo->downloaded = NextTexAvail++;
+-		tex_downloaded = TexInfo->downloaded;
+-		glBindTexture(GL_TEXTURE_2D, texids[TexInfo->downloaded]);
+-
+-		if(!glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB256, wtype, htype, 0, TEXGEN_TEXCOORD, TexInfo->grInfo.data))
+-		{
+-			// HACK: If we're out of memory, flush and try again.
+-			// This will result in artefacts for one frame.
+-			Flush();
+-			TexInfo->downloaded = 0;
+-			NDS3D_SetTexture(TexInfo);
+-			return;
+-		}
+-
+-		if (TexInfo->downloaded > FIRST_TEX_AVAIL)
+-		{
+-			// We already have a texture using the palette, so it's already in VRAM
+-			glAssignColorTable(GL_TEXTURE_2D, texids[FIRST_TEX_AVAIL]);
+-		}
+-		else
+-		{
+-			// Generate the palette in hardware
+-			glColorTableEXT(0, 0, 256, 0, 0, myPaletteData);
+-		}
+-
+-		if (TexInfo->flags & TF_WRAPX)
+-			texparam |= GL_TEXTURE_WRAP_S;
+-
+-		if (TexInfo->flags & TF_WRAPY)
+-			texparam |= GL_TEXTURE_WRAP_T;
+-
+-		glTexParameter(0, texparam);
+-
+-		TexInfo->nextmipmap = NULL;
+-		if (gr_cachetail)
+-		{
+-			gr_cachetail->nextmipmap = TexInfo;
+-			gr_cachetail = TexInfo;
+-		}
+-		else
+-			gr_cachetail = gr_cachehead = TexInfo;
+-	}
+-}
+-
+-void NDS3D_ReadRect(INT32 x, INT32 y, INT32 width, INT32 height, INT32 dst_stride, UINT16 *dst_data)
+-{
+-	(void)x;
+-	(void)y;
+-	(void)width;
+-	(void)height;
+-	(void)dst_stride;
+-	(void)dst_data;
+-}
+-
+-void NDS3D_GClipRect(INT32 minx, INT32 miny, INT32 maxx, INT32 maxy, float nearclip)
+-{
+-	(void)minx;
+-	(void)miny;
+-	(void)maxx;
+-	(void)maxy;
+-	//glViewport(minx, vid.height-maxy, maxx-minx, maxy-miny);
+-	NEAR_CLIPPING_PLANE = nearclip;
+-
+-	glMatrixMode(GL_PROJECTION);
+-	glLoadIdentity();
+-	gluPerspective(fov, ASPECT_RATIO, NEAR_CLIPPING_PLANE, FAR_CLIPPING_PLANE);
+-	glMatrixMode(GL_MODELVIEW);
+-}
+-
+-void NDS3D_ClearMipMapCache(void) {}
+-
+-void NDS3D_SetSpecialState(hwdspecialstate_t IdState, INT32 Value)
+-{
+-	(void)IdState;
+-	(void)Value;
+-}
+-
+-void NDS3D_DrawMD2(INT32 *gl_cmd_buffer, md2_frame_t *frame, FTransform *pos, float scale)
+-{
+-	(void)gl_cmd_buffer;
+-	(void)frame;
+-	(void)pos;
+-	(void)scale;
+-}
+-
+-void NDS3D_DrawMD2i(INT32 *gl_cmd_buffer, md2_frame_t *frame, UINT32 duration, UINT32 tics, md2_frame_t *nextframe, FTransform *pos, float scale, UINT8 flipped, UINT8 *color)
+-{
+-	(void)gl_cmd_buffer;
+-	(void)frame;
+-	(void)duration;
+-	(void)tics;
+-	(void)nextframe;
+-	(void)pos;
+-	(void)scale;
+-	(void)flipped;
+-	(void)color;
+-}
+-
+-void NDS3D_SetTransform(FTransform *ptransform)
+-{
+-	static INT32 special_splitscreen;
+-	glLoadIdentity();
+-	if (ptransform)
+-	{
+-		scalehack = true;
+-
+-		glScalef(ptransform->scalex*4096.0f, ptransform->scaley*4096.0f, -ptransform->scalez*4096.0f);
+-		glRotatef(ptransform->anglex       , 1.0f, 0.0f, 0.0f);
+-		glRotatef(ptransform->angley+270.0f, 0.0f, 1.0f, 0.0f);
+-		glTranslatef(-ptransform->x/4096.0f, -ptransform->z/4096.0f, -ptransform->y/4096.0f);
+-
+-		glMatrixMode(GL_PROJECTION);
+-		glLoadIdentity();
+-		special_splitscreen = (ptransform->splitscreen && ptransform->fovxangle == 90.0f);
+-		if (special_splitscreen)
+-			gluPerspective(53.13l, 2*ASPECT_RATIO,  // 53.13 = 2*atan(0.5)
+-			                NEAR_CLIPPING_PLANE, FAR_CLIPPING_PLANE);
+-		else
+-			gluPerspective(ptransform->fovxangle, ASPECT_RATIO, NEAR_CLIPPING_PLANE, FAR_CLIPPING_PLANE);
+-
+-		glMatrixMode(GL_MODELVIEW);
+-	}
+-	else
+-	{
+-		scalehack = false;
+-
+-		glScalef(1.0f, 1.0f, -1.0f);
+-
+-		glMatrixMode(GL_PROJECTION);
+-		glLoadIdentity();
+-		if (special_splitscreen)
+-			gluPerspective(53.13l, 2*ASPECT_RATIO,  // 53.13 = 2*atan(0.5)
+-			                NEAR_CLIPPING_PLANE, FAR_CLIPPING_PLANE);
+-		else
+-			//Hurdler: is "fov" correct?
+-			gluPerspective(fov, ASPECT_RATIO, NEAR_CLIPPING_PLANE, FAR_CLIPPING_PLANE);
+-
+-		glMatrixMode(GL_MODELVIEW);
+-	}
+-}
+-
+-INT32 NDS3D_GetTextureUsed(void)
+-{
+-	return 0;
+-}
+-
+-INT32 NDS3D_GetRenderVersion(void)
+-{
+-	return 0;
+-}
+diff --git a/src/nds/r_nds3d.h b/src/nds/r_nds3d.h
+deleted file mode 100644
+index 3a7075bcd..000000000
+--- a/src/nds/r_nds3d.h
++++ /dev/null
+@@ -1,55 +0,0 @@
+-// Emacs style mode select   -*- C++ -*-
+-//-----------------------------------------------------------------------------
+-//
+-// Copyright (C) 1993-1996 by id Software, Inc.
+-// Copyright (C) 1998-2000 by DooM Legacy Team.
+-//
+-// This program is free software; you can redistribute it and/or
+-// modify it under the terms of the GNU General Public License
+-// as published by the Free Software Foundation; either version 2
+-// of the License, or (at your option) any later version.
+-//
+-// This program is distributed in the hope that it will be useful,
+-// but WITHOUT ANY WARRANTY; without even the implied warranty of
+-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+-// GNU General Public License for more details.
+-//-----------------------------------------------------------------------------
+-/// \file
+-/// \brief NDS 3D API for SRB2.
+-
+-#ifndef __R_NDS3D__
+-#define __R_NDS3D__
+-
+-#include "../doomtype.h"
+-#include "../hardware/hw_defs.h"
+-#include "../hardware/hw_dll.h"
+-#include "../hardware/hw_md2.h"
+-
+-#define FAR_CLIPPING_PLANE 150000.0f
+-#define ASPECT_RATIO 1.0f
+-
+-typedef float FCOORD;
+-
+-extern FCOORD NEAR_CLIPPING_PLANE;
+-extern float fov;
+-
+-boolean NDS3D_Init(I_Error_t ErrorFunction);
+-void NDS3D_Shutdown(void);
+-void NDS3D_SetPalette(RGBA_t *ppal, RGBA_t *pgamma);
+-void NDS3D_FinishUpdate(INT32 waitvbl);
+-void NDS3D_Draw2DLine(F2DCoord *v1, F2DCoord *v2, RGBA_t Color);
+-void NDS3D_DrawPolygon(FSurfaceInfo *pSurf, FOutVector *pOutVerts, FUINT iNumPts, FBITFIELD PolyFlags);
+-void NDS3D_SetBlend(FBITFIELD PolyFlags);
+-void NDS3D_ClearBuffer(FBOOLEAN ColorMask, FBOOLEAN DepthMask, FRGBAFloat *ClearColor);
+-void NDS3D_SetTexture(FTextureInfo *TexInfo);
+-void NDS3D_ReadRect(INT32 x, INT32 y, INT32 width, INT32 height, INT32 dst_stride, UINT16 *dst_data);
+-void NDS3D_GClipRect(INT32 minx, INT32 miny, INT32 maxx, INT32 maxy, float nearclip);
+-void NDS3D_ClearMipMapCache(void);
+-void NDS3D_SetSpecialState(hwdspecialstate_t IdState, INT32 Value);
+-void NDS3D_DrawMD2(INT32 *gl_cmd_buffer, md2_frame_t *frame, FTransform *pos, float scale);
+-void NDS3D_DrawMD2i(INT32 *gl_cmd_buffer, md2_frame_t *frame, UINT32 duration, UINT32 tics, md2_frame_t *nextframe, FTransform *pos, float scale, UINT8 flipped, UINT8 *color);
+-void NDS3D_SetTransform(FTransform *ptransform);
+-INT32 NDS3D_GetTextureUsed(void);
+-INT32 NDS3D_GetRenderVersion(void);
+-
+-#endif
+diff --git a/src/p_local.h b/src/p_local.h
+index 9164fa7a0..f8b966750 100644
+--- a/src/p_local.h
++++ b/src/p_local.h
+@@ -144,6 +144,7 @@ UINT8 P_GetNextEmerald(void);
+ void P_GiveEmerald(boolean spawnObj);
+ void P_ResetScore(player_t *player);
+ boolean P_AutoPause(void);
++void P_ForceLocalAngle(player_t *player, angle_t angle);
+ 
+ void P_DoJumpShield(player_t *player);
+ void P_BlackOw(player_t *player);
+@@ -414,3 +415,4 @@ void P_ExplodeMissile(mobj_t *mo);
+ void P_CheckGravity(mobj_t *mo, boolean affect);
+ 
+ #endif // __P_LOCAL__
++
+diff --git a/src/p_map.c b/src/p_map.c
+index 3ce82b4da..45d352c24 100644
+--- a/src/p_map.c
++++ b/src/p_map.c
+@@ -456,7 +456,7 @@ static boolean PIT_CheckThing(mobj_t *thing)
+ 		return true;
+ 	}
+ 
+-	if (!(thing->flags & (MF_SOLID|MF_SPECIAL|MF_PAIN|MF_SHOOTABLE)))
++	if (!(thing->flags & (MF_SOLID|MF_SPECIAL|MF_PAIN|MF_SHOOTABLE)) || (thing->flags & MF_NOCLIPTHING))
+ 		return true;
+ 
+ 	// Don't collide with your buddies while NiGHTS-flying.
+diff --git a/src/p_tick.c b/src/p_tick.c
+index 75844b55e..62bee605d 100644
+--- a/src/p_tick.c
++++ b/src/p_tick.c
+@@ -599,7 +599,15 @@ void P_Ticker(boolean run)
+ 		if (demorecording)
+ 			G_WriteDemoTiccmd(&players[consoleplayer].cmd, 0);
+ 		if (demoplayback)
+-			G_ReadDemoTiccmd(&players[consoleplayer].cmd, 0);
++		{
++			player_t* p = &players[consoleplayer];
++			G_ReadDemoTiccmd(&p->cmd, 0);
++			if (!cv_freedemocamera.value)
++			{
++				P_ForceLocalAngle(p, p->cmd.angleturn << 16);
++				localaiming = p->aiming;
++			}
++		}
+ 
+ 		for (i = 0; i < MAXPLAYERS; i++)
+ 			if (playeringame[i] && players[i].mo && !P_MobjWasRemoved(players[i].mo))
+@@ -752,3 +760,4 @@ void P_PreTicker(INT32 frames)
+ 		P_MapEnd();
+ 	}
+ }
++
+diff --git a/src/p_user.c b/src/p_user.c
+index 3710e87f1..595018fea 100644
+--- a/src/p_user.c
++++ b/src/p_user.c
+@@ -3913,6 +3913,15 @@ static void P_DoJumpStuff(player_t *player, ticcmd_t *cmd)
+ 	if (player->pflags & PF_JUMPSTASIS)
+ 		return;
+ 
++	if ((cmd->buttons & BT_USE) && ((player->pflags & PF_JUMPED) && !player->exiting && !P_PlayerInPain(player)))
++	{
++		if (!(player->pflags & PF_USEDOWN) && P_SuperReady(player))
++		{
++			// If you can turn super and aren't already,
++			// and you don't have a shield, do it!
++			P_DoSuperTransformation(player, false);
++		}
++	}
+ 	if (cmd->buttons & BT_USE && !(player->pflags & PF_JUMPDOWN) && !player->exiting && !P_PlayerInPain(player))
+ 	{
+ 		if (onground || player->climbing || player->pflags & (PF_CARRIED|PF_ITEMHANG|PF_ROPEHANG))
+@@ -4005,12 +4014,6 @@ static void P_DoJumpStuff(player_t *player, ticcmd_t *cmd)
+ 		}
+ 		else if (player->pflags & PF_SLIDING || (gametype == GT_CTF && player->gotflag))
+ 			;
+-		else if (P_SuperReady(player))
+-		{
+-			// If you can turn super and aren't already,
+-			// and you don't have a shield, do it!
+-			P_DoSuperTransformation(player, false);
+-		}
+ 		else if (player->pflags & PF_JUMPED)
+ 		{
+ #ifdef HAVE_BLUA
+@@ -9572,3 +9575,13 @@ void P_PlayerAfterThink(player_t *player)
+ 	if (P_IsObjectOnGround(player->mo))
+ 		player->mo->pmomz = 0;
+ }
++
++void P_ForceLocalAngle(player_t *player, angle_t angle)
++{
++	angle = angle & ~UINT16_MAX;
++
++	if (player == &players[consoleplayer])
++		localangle = angle;
++	else if (player == &players[secondarydisplayplayer])
++		localangle2 = angle;
++}
+diff --git a/src/r_data.c b/src/r_data.c
+index bd12eb248..e6d66c968 100644
+--- a/src/r_data.c
++++ b/src/r_data.c
+@@ -1162,7 +1162,7 @@ INT32 R_ColormapNumForName(char *name)
+ //
+ static double deltas[256][3], map[256][3];
+ 
+-static UINT8 NearestColor(UINT8 r, UINT8 g, UINT8 b);
++UINT8 NearestColor(UINT8 r, UINT8 g, UINT8 b);
+ static int RoundUp(double number);
+ 
+ INT32 R_CreateColormap(char *p1, char *p2, char *p3)
+@@ -1342,7 +1342,7 @@ INT32 R_CreateColormap(char *p1, char *p2, char *p3)
+ 
+ // Thanks to quake2 source!
+ // utils3/qdata/images.c
+-static UINT8 NearestColor(UINT8 r, UINT8 g, UINT8 b)
++UINT8 NearestColor(UINT8 r, UINT8 g, UINT8 b)
+ {
+ 	int dr, dg, db;
+ 	int distortion, bestdistortion = 256 * 256 * 4, bestcolor = 0, i;
+@@ -1623,3 +1623,4 @@ void R_PrecacheLevel(void)
+ 			"texturememory: %s k\n"
+ 			"spritememory:  %s k\n", sizeu1(flatmemory>>10), sizeu2(texturememory>>10), sizeu3(spritememory>>10));
+ }
++
+diff --git a/src/r_data.h b/src/r_data.h
+index 5de51ccd4..0ba9bdd0f 100644
+--- a/src/r_data.h
++++ b/src/r_data.h
+@@ -95,6 +95,9 @@ INT32 R_ColormapNumForName(char *name);
+ INT32 R_CreateColormap(char *p1, char *p2, char *p3);
+ const char *R_ColormapNameForNum(INT32 num);
+ 
++UINT8 NearestColor(UINT8 r, UINT8 g, UINT8 b);
++
+ extern INT32 numtextures;
+ 
+ #endif
++
+diff --git a/src/s_sound.c b/src/s_sound.c
+index acb7dcbbe..78304a5a6 100644
+--- a/src/s_sound.c
++++ b/src/s_sound.c
+@@ -59,6 +59,8 @@ static void GameMIDIMusic_OnChange(void);
+ static void GameSounds_OnChange(void);
+ static void GameDigiMusic_OnChange(void);
+ 
++static void ModFilter_OnChange(void);
++
+ // commands for music and sound servers
+ #ifdef MUSSERV
+ consvar_t musserver_cmd = {"musserver_cmd", "musserver", CV_SAVE, NULL, NULL, 0, NULL, NULL, 0, 0, NULL};
+@@ -108,6 +110,16 @@ consvar_t cv_gamedigimusic = {"digimusic", "On", CV_SAVE|CV_CALL|CV_NOINIT, CV_O
+ consvar_t cv_gamemidimusic = {"midimusic", "On", CV_SAVE|CV_CALL|CV_NOINIT, CV_OnOff, GameMIDIMusic_OnChange, 0, NULL, NULL, 0, 0, NULL};
+ consvar_t cv_gamesounds = {"sounds", "On", CV_SAVE|CV_CALL|CV_NOINIT, CV_OnOff, GameSounds_OnChange, 0, NULL, NULL, 0, 0, NULL};
+ 
++// Window focus sound sytem toggles
++consvar_t cv_playmusicifunfocused = {"playmusicifunfocused", "No", CV_SAVE, CV_YesNo};
++consvar_t cv_playsoundsifunfocused = {"playsoundsifunfocused", "No", CV_SAVE, CV_YesNo};
++
++#ifdef HAVE_OPENMPT
++openmpt_module *openmpt_mhandle = NULL;
++static CV_PossibleValue_t interpolationfilter_cons_t[] = {{0, "Default"}, {1, "None"}, {2, "Linear"}, {4, "Cubic"}, {8, "Windowed sinc"}, {0, NULL}};
++consvar_t cv_modfilter = {"modfilter", "0", CV_SAVE|CV_CALL, interpolationfilter_cons_t, ModFilter_OnChange, 0, NULL, NULL, 0, 0, NULL};
++#endif
++
+ #define S_MAX_VOLUME 127
+ 
+ // when to clip out sounds
+@@ -262,14 +274,18 @@ void S_RegisterSoundStuff(void)
+ 	CV_RegisterVar(&surround);
+ 	CV_RegisterVar(&cv_samplerate);
+ 	CV_RegisterVar(&cv_resetmusic);
++	CV_RegisterVar(&cv_playsoundsifunfocused);
++	CV_RegisterVar(&cv_playmusicifunfocused);
+ 	CV_RegisterVar(&cv_gamesounds);
+ 	CV_RegisterVar(&cv_gamedigimusic);
+ 	CV_RegisterVar(&cv_gamemidimusic);
++#ifdef HAVE_OPENMPT
++	CV_RegisterVar(&cv_modfilter);
++#endif
+ 
+ 	COM_AddCommand("tunes", Command_Tunes_f);
+ 	COM_AddCommand("restartaudio", Command_RestartAudio_f);
+ 
+-
+ #if defined (macintosh) && !defined (HAVE_SDL) // mp3 playlist stuff
+ 	{
+ 		INT32 i;
+@@ -348,6 +364,18 @@ lumpnum_t S_GetSfxLumpNum(sfxinfo_t *sfx)
+ 	return W_GetNumForName("dsthok");
+ }
+ 
++//
++// Sound Status
++//
++
++boolean S_SoundDisabled(void)
++{
++	return (
++			sound_disabled ||
++			( window_notinfocus && ! cv_playsoundsifunfocused.value )
++	);
++}
++
+ // Stop all sounds, load level info, THEN start sounds.
+ void S_StopSounds(void)
+ {
+@@ -426,7 +454,7 @@ void S_StartSoundAtVolume(const void *origin_p, sfxenum_t sfx_id, INT32 volume)
+ 	mobj_t *listenmobj = players[displayplayer].mo;
+ 	mobj_t *listenmobj2 = NULL;
+ 
+-	if (sound_disabled || !sound_started)
++	if (S_SoundDisabled() || !sound_started)
+ 		return;
+ 
+ 	// Don't want a sound? Okay then...
+@@ -610,7 +638,7 @@ dontplay:
+ 
+ void S_StartSound(const void *origin, sfxenum_t sfx_id)
+ {
+-	if (sound_disabled)
++	if (S_SoundDisabled())
+ 		return;
+ 
+ 	if (mariomode) // Sounds change in Mario mode!
+@@ -1280,6 +1308,12 @@ boolean S_MusicPaused(void)
+ 	return I_SongPaused();
+ }
+ 
++boolean S_MusicNotInFocus(void)
++{
++	return (
++			( window_notinfocus && ! cv_playmusicifunfocused.value )
++	);
++}
+ musictype_t S_MusicType(void)
+ {
+ 	return I_SongType();
+@@ -1434,6 +1468,10 @@ static boolean S_PlayMusic(boolean looping, UINT32 fadeinms)
+ 	}
+ 
+ 	S_InitMusicVolume(); // switch between digi and sequence volume
++
++	if (S_MusicNotInFocus())
++		S_PauseAudio();
++
+ 	return true;
+ }
+ 
+@@ -1561,6 +1599,9 @@ void S_PauseAudio(void)
+ 
+ void S_ResumeAudio(void)
+ {
++	if (S_MusicNotInFocus())
++		return;
++
+ 	if (I_SongPlaying() && I_SongPaused())
+ 		I_ResumeSong();
+ 
+@@ -1844,3 +1885,11 @@ void GameMIDIMusic_OnChange(void)
+ 		}
+ 	}
+ }
++
++#ifdef HAVE_OPENMPT
++void ModFilter_OnChange(void)
++{
++	if (openmpt_mhandle)
++		openmpt_module_set_render_param(openmpt_mhandle, OPENMPT_MODULE_RENDER_INTERPOLATIONFILTER_LENGTH, cv_modfilter.value);
++}
++#endif
+diff --git a/src/s_sound.h b/src/s_sound.h
+index 157b8b1cc..3d51609ab 100644
+--- a/src/s_sound.h
++++ b/src/s_sound.h
+@@ -20,6 +20,11 @@
+ #include "command.h"
+ #include "tables.h" // angle_t
+ 
++#ifdef HAVE_OPENMPT
++#include "libopenmpt/libopenmpt.h"
++extern openmpt_module *openmpt_mhandle;
++#endif
++
+ // mask used to indicate sound origin is player item pickup
+ #define PICKUP_SOUND 0x8000
+ 
+@@ -31,6 +36,13 @@ extern consvar_t cv_gamedigimusic;
+ extern consvar_t cv_gamemidimusic;
+ extern consvar_t cv_gamesounds;
+ 
++extern consvar_t cv_playmusicifunfocused;
++extern consvar_t cv_playsoundsifunfocused;
++
++#ifdef HAVE_OPENMPT
++extern consvar_t cv_modfilter;
++#endif
++
+ #ifdef SNDSERV
+ extern consvar_t sndserver_cmd, sndserver_arg;
+ #endif
+@@ -91,6 +103,12 @@ void S_Start(void);
+ //
+ lumpnum_t S_GetSfxLumpNum(sfxinfo_t *sfx);
+ 
++//
++// Sound Status
++//
++
++boolean S_SoundDisabled(void);
++
+ //
+ // Start sound for thing at <origin> using <sound_id> from sounds.h
+ //
+@@ -111,6 +129,7 @@ boolean S_MIDIMusicDisabled(void);
+ boolean S_MusicDisabled(void);
+ boolean S_MusicPlaying(void);
+ boolean S_MusicPaused(void);
++boolean S_MusicNotInFocus(void);
+ musictype_t S_MusicType(void);
+ const char *S_MusicName(void);
+ boolean S_MusicInfo(char *mname, UINT16 *mflags, boolean *looping);
+@@ -204,7 +223,8 @@ void S_StopSoundByNum(sfxenum_t sfxnum);
+ #ifdef MUSICSLOT_COMPATIBILITY
+ // For compatibility with code/scripts relying on older versions
+ // This is a list of all the "special" slot names and their associated numbers
+-const char *compat_special_music_slots[16];
++extern const char *compat_special_music_slots[16];
+ #endif
+ 
+ #endif
++
+diff --git a/src/sdl/CMakeLists.txt b/src/sdl/CMakeLists.txt
+index de2157055..f1aa135b9 100644
+--- a/src/sdl/CMakeLists.txt
++++ b/src/sdl/CMakeLists.txt
+@@ -149,6 +149,7 @@ if(${SDL2_FOUND})
+ 			SDL2
+ 			SDL2_mixer
+ 			${GME_LIBRARIES}
++			${OPENMPT_LIBRARIES}
+ 			${PNG_LIBRARIES}
+ 			${ZLIB_LIBRARIES}
+ 			${OPENGL_LIBRARIES}
+@@ -159,6 +160,7 @@ if(${SDL2_FOUND})
+ 			${SDL2_LIBRARIES}
+ 			${SDL2_MIXER_LIBRARIES}
+ 			${GME_LIBRARIES}
++			${OPENMPT_LIBRARIES}
+ 			${PNG_LIBRARIES}
+ 			${ZLIB_LIBRARIES}
+ 			${OPENGL_LIBRARIES}
+@@ -238,6 +240,7 @@ if(${SDL2_FOUND})
+ 		${SDL2_INCLUDE_DIRS}
+ 		${SDL2_MIXER_INCLUDE_DIRS}
+ 		${GME_INCLUDE_DIRS}
++		${OPENMPT_INCLUDE_DIRS}
+ 		${PNG_INCLUDE_DIRS}
+ 		${ZLIB_INCLUDE_DIRS}
+ 		${OPENGL_INCLUDE_DIRS}
+@@ -284,12 +287,14 @@ if(${SDL2_FOUND})
+ 							HINTS ${CMAKE_SOURCE_DIR}/libs/dll-binaries/x86_64
+ 							HINTS ${CMAKE_SOURCE_DIR}/libs/SDL2/x86_64-w64-mingw32/bin
+ 							HINTS ${CMAKE_SOURCE_DIR}/libs/SDL2_mixer/x86_64-w64-mingw32/bin
++							HINTS ${CMAKE_SOURCE_DIR}/libs/libopenmpt/bin/x86_64/mingw
+ 						)
+ 					else()
+ 						find_library(SRB2_SDL2_DLL_${dllname} "${defaultname}"
+ 							HINTS ${CMAKE_SOURCE_DIR}/libs/dll-binaries/i686
+ 							HINTS ${CMAKE_SOURCE_DIR}/libs/SDL2/i686-w64-mingw32/bin
+ 							HINTS ${CMAKE_SOURCE_DIR}/libs/SDL2_mixer/i686-w64-mingw32/bin
++							HINTS ${CMAKE_SOURCE_DIR}/libs/libopenmpt/bin/x86/mingw
+ 						)
+ 					endif()
+ 				else()
+@@ -298,12 +303,14 @@ if(${SDL2_FOUND})
+ 							HINTS ${CMAKE_SOURCE_DIR}/libs/dll-binaries/x86_64
+ 							HINTS ${CMAKE_SOURCE_DIR}/libs/SDL2/lib/x64
+ 							HINTS ${CMAKE_SOURCE_DIR}/libs/SDL2_mixer/lib/x64
++							HINTS ${CMAKE_SOURCE_DIR}/libs/libopenmpt/bin/x86_64/mingw
+ 						)
+ 					else()
+ 						find_library(SRB2_SDL2_DLL_${dllname} "${defaultname}"
+ 							HINTS ${CMAKE_SOURCE_DIR}/libs/dll-binaries/i686
+ 							HINTS ${CMAKE_SOURCE_DIR}/libs/SDL2/lib/x86
+ 							HINTS ${CMAKE_SOURCE_DIR}/libs/SDL2_mixer/lib/x86
++							HINTS ${CMAKE_SOURCE_DIR}/libs/libopenmpt/bin/x86/mingw
+ 						)
+ 					endif()
+ 				endif()
+@@ -324,6 +331,9 @@ if(${SDL2_FOUND})
+ 		if(${SRB2_CONFIG_HAVE_GME})
+ 			getwinlib(libgme "libgme.dll")
+ 		endif()
++		if(${SRB2_CONFIG_HAVE_OPENMPT})
++			getwinlib(libopenmpt "libopenmpt.dll")
++		endif()
+ 
+ 		install(PROGRAMS
+ 			${win_extra_dll_list}
+diff --git a/src/sdl/MakeNIX.cfg b/src/sdl/MakeNIX.cfg
+index 47c944eb5..938d8d485 100644
+--- a/src/sdl/MakeNIX.cfg
++++ b/src/sdl/MakeNIX.cfg
+@@ -51,9 +51,9 @@ endif
+ #
+ ifdef FREEBSD
+ 	OPTS+=-DLINUX -DFREEBSD -I/usr/X11R6/include
+-	SDL_CONFIG?=sdl11-config
++	SDL_CONFIG?=sdl2-config
+ 	LDFLAGS+=-L/usr/X11R6/lib
+-	LIBS+=-lipx -lkvm
++	LIBS+=-lkvm -lexecinfo
+ endif
+ 
+ #
+@@ -71,4 +71,4 @@ ifndef NOHW
+ endif
+ 
+ 	# name of the exefile
+-	EXENAME?=lsdl2srb2
++	EXENAME?=srb2legacy
+diff --git a/src/sdl/Srb2SDL-vc10.vcxproj b/src/sdl/Srb2SDL-vc10.vcxproj
+index ee5df4dcb..8c1236479 100644
+--- a/src/sdl/Srb2SDL-vc10.vcxproj
++++ b/src/sdl/Srb2SDL-vc10.vcxproj
+@@ -94,6 +94,7 @@
+     <Import Project="..\..\libs\SDL2.props" />
+     <Import Project="..\..\libs\SDL_mixer.props" />
+     <Import Project="..\..\libs\libgme.props" />
++    <Import Project="..\..\libs\libopenmpt.props" />
+     <Import Project="Srb2SDL.props" />
+   </ImportGroup>
+   <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+@@ -479,4 +480,4 @@
+   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+   <ImportGroup Label="ExtensionTargets">
+   </ImportGroup>
+-</Project>
+\ No newline at end of file
++</Project>
+diff --git a/src/sdl/Srb2SDL.props b/src/sdl/Srb2SDL.props
+index 75839a5b2..23fe7d34e 100644
+--- a/src/sdl/Srb2SDL.props
++++ b/src/sdl/Srb2SDL.props
+@@ -6,10 +6,10 @@
+   <ItemDefinitionGroup>
+     <ClCompile>
+       <!-- x86/x64 defines: has specific libraries that ARM does not -->
+-      <PreprocessorDefinitions Condition="'$(Platform)' == 'Win32' OR '$(Platform)' == 'x64'">HAVE_ZLIB;HAVE_LIBGME;USE_WGL_SWAP;DIRECTFULLSCREEN;HAVE_SDL;HWRENDER;HW3SOUND;HAVE_FILTER;HAVE_MIXER;SDLMAIN;%(PreprocessorDefinitions)</PreprocessorDefinitions>
++      <PreprocessorDefinitions Condition="'$(Platform)' == 'Win32' OR '$(Platform)' == 'x64'">HAVE_ZLIB;HAVE_LIBGME;USE_WGL_SWAP;DIRECTFULLSCREEN;HAVE_SDL;HWRENDER;HW3SOUND;HAVE_FILTER;HAVE_MIXER;HAVE_OPENMPT;SDLMAIN;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+       <!-- ARM defines -->
+-      <PreprocessorDefinitions Condition="'$(Platform)' != 'Win32' AND '$(Platform)' != 'x64'">USE_WGL_SWAP;DIRECTFULLSCREEN;HAVE_SDL;HWRENDER;HW3SOUND;HAVE_FILTER;HAVE_MIXER;SDLMAIN;%(PreprocessorDefinitions)</PreprocessorDefinitions>
++      <PreprocessorDefinitions Condition="'$(Platform)' != 'Win32' AND '$(Platform)' != 'x64'">USE_WGL_SWAP;DIRECTFULLSCREEN;HAVE_SDL;HWRENDER;HW3SOUND;HAVE_FILTER;HAVE_MIXER;HAVE_OPENMPT;SDLMAIN;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+     </ClCompile>
+   </ItemDefinitionGroup>
+   <ItemGroup />
+-</Project>
+\ No newline at end of file
++</Project>
+diff --git a/src/sdl/i_system.c b/src/sdl/i_system.c
+index a18443c52..3ec5a35ed 100644
+--- a/src/sdl/i_system.c
++++ b/src/sdl/i_system.c
+@@ -90,7 +90,7 @@ typedef LPVOID (WINAPI *p_MapViewOfFile) (HANDLE, DWORD, DWORD, DWORD, SIZE_T);
+ #include <kvm.h>
+ #endif
+ #include <nlist.h>
+-#include <sys/vmmeter.h>
++#include <sys/sysctl.h>
+ #endif
+ #endif
+ 
+@@ -133,16 +133,16 @@ typedef LPVOID (WINAPI *p_MapViewOfFile) (HANDLE, DWORD, DWORD, DWORD, SIZE_T);
+ 
+ // Locations for searching the srb2.srb
+ #if defined (__unix__) || defined(__APPLE__) || defined (UNIXCOMMON)
+-#define DEFAULTWADLOCATION1 "/usr/local/share/games/SRB2"
+-#define DEFAULTWADLOCATION2 "/usr/local/games/SRB2"
+-#define DEFAULTWADLOCATION3 "/usr/share/games/SRB2"
+-#define DEFAULTWADLOCATION4 "/usr/games/SRB2"
++#define DEFAULTWADLOCATION1 "/usr/local/share/games/SRB2legacy"
++#define DEFAULTWADLOCATION2 "/usr/local/games/SRB2legacy"
++#define DEFAULTWADLOCATION3 "/usr/share/games/SRB2legacy"
++#define DEFAULTWADLOCATION4 "/usr/games/SRB2legacy"
+ #define DEFAULTSEARCHPATH1 "/usr/local/games"
+ #define DEFAULTSEARCHPATH2 "/usr/games"
+ #define DEFAULTSEARCHPATH3 "/usr/local"
+ #elif defined (_WIN32)
+-#define DEFAULTWADLOCATION1 "c:\\games\\srb2"
+-#define DEFAULTWADLOCATION2 "\\games\\srb2"
++#define DEFAULTWADLOCATION1 "c:\\games\\srb2legacy"
++#define DEFAULTWADLOCATION2 "\\games\\srb2legacy"
+ #define DEFAULTSEARCHPATH1 "c:\\games"
+ #define DEFAULTSEARCHPATH2 "\\games"
+ #endif
+@@ -268,9 +268,10 @@ FUNCNORETURN static ATTRNORETURN void signal_handler(INT32 num)
+ 
+ 	I_OutputMsg("\nsignal_handler() error: %s\n", sigmsg);
+ 
+-	SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR,
+-		"Signal caught",
+-		sigmsg, NULL);
++	if (!M_CheckParm("-dedicated"))
++		SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR,
++			"Signal caught",
++			sigmsg, NULL);
+ 	I_ShutdownSystem();
+ 	signal(num, SIG_DFL);               //default signal action
+ 	raise(num);
+@@ -531,7 +532,7 @@ static void Impl_HandleKeyboardConsoleEvent(KEY_EVENT_RECORD evt, HANDLE co)
+ 				break;
+ 			case VK_RETURN:
+ 				entering_con_command = false;
+-				// Fall through.
++				/* FALLTHRU */
+ 			default:
+ 				event.data1 = MapVirtualKey(evt.wVirtualKeyCode,2); // convert in to char
+ 		}
+@@ -2235,9 +2236,10 @@ void I_Error(const char *error, ...)
+ 			// Implement message box with SDL_ShowSimpleMessageBox,
+ 			// which should fail gracefully if it can't put a message box up
+ 			// on the target system
+-			SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR,
+-				"SRB2 "VERSIONSTRING" Recursive Error",
+-				buffer, NULL);
++			if (!M_CheckParm("-dedicated"))
++				SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR,
++					"SRB2 "VERSIONSTRING" Recursive Error",
++					buffer, NULL);
+ 
+ 			W_Shutdown();
+ 			exit(-1); // recursive errors detected
+@@ -2280,9 +2282,10 @@ void I_Error(const char *error, ...)
+ 	// Implement message box with SDL_ShowSimpleMessageBox,
+ 	// which should fail gracefully if it can't put a message box up
+ 	// on the target system
+-	SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR,
+-		"SRB2 "VERSIONSTRING" Error",
+-		buffer, NULL);
++	if (!M_CheckParm("-dedicated"))
++		SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR,
++			"SRB2 "VERSIONSTRING" Error",
++			buffer, NULL);
+ 	// Note that SDL_ShowSimpleMessageBox does *not* require SDL to be
+ 	// initialized at the time, so calling it after SDL_Quit() is
+ 	// perfectly okay! In addition, we do this on purpose so the
+@@ -2610,9 +2613,10 @@ static const char *locateWad(void)
+ 	const char *envstr;
+ 	const char *WadPath;
+ 
+-	I_OutputMsg("SRB2WADDIR");
+-	// does SRB2WADDIR exist?
+-	if (((envstr = I_GetEnv("SRB2WADDIR")) != NULL) && isWadPathOk(envstr))
++	// SRB2WADDIR environment variable has been renamed to SRB2LEGACYWADDIR to prevent conflicts with 2.2+.
++	I_OutputMsg("SRB2LEGACYWADDIR");
++	// does SRB2LEGACYWADDIR exist?
++	if (((envstr = I_GetEnv("SRB2LEGACYWADDIR")) != NULL) && isWadPathOk(envstr))
+ 		return envstr;
+ 
+ #ifndef NOCWD
+@@ -2772,44 +2776,20 @@ static long get_entry(const char* name, const char* buf)
+ }
+ #endif
+ 
+-// quick fix for compil
+-UINT32 I_GetFreeMem(UINT32 *total)
++size_t I_GetFreeMem(size_t *total)
+ {
+ #ifdef FREEBSD
+-	struct vmmeter sum;
+-	kvm_t *kd;
+-	struct nlist namelist[] =
+-	{
+-#define X_SUM   0
+-		{"_cnt"},
+-		{NULL}
+-	};
+-	if ((kd = kvm_open(NULL, NULL, NULL, O_RDONLY, "kvm_open")) == NULL)
+-	{
+-		if (total)
+-			*total = 0L;
+-		return 0;
+-	}
+-	if (kvm_nlist(kd, namelist) != 0)
+-	{
+-		kvm_close (kd);
+-		if (total)
+-			*total = 0L;
+-		return 0;
+-	}
+-	if (kvm_read(kd, namelist[X_SUM].n_value, &sum,
+-		sizeof (sum)) != sizeof (sum))
+-	{
+-		kvm_close(kd);
+-		if (total)
+-			*total = 0L;
+-		return 0;
+-	}
+-	kvm_close(kd);
++	u_int v_free_count, v_page_size, v_page_count;
++	size_t size = sizeof(v_free_count);
++	sysctlbyname("vm.stats.vm.v_free_count", &v_free_count, &size, NULL, 0);
++	size = sizeof(v_page_size);
++	sysctlbyname("vm.stats.vm.v_page_size", &v_page_size, &size, NULL, 0);
++	size = sizeof(v_page_count);
++	sysctlbyname("vm.stats.vm.v_page_count", &v_page_count, &size, NULL, 0);
+ 
+ 	if (total)
+-		*total = sum.v_page_count * sum.v_page_size;
+-	return sum.v_free_count * sum.v_page_size;
++		*total = v_page_count * v_page_size;
++	return v_free_count * v_page_size;
+ #elif defined (SOLARIS)
+ 	/* Just guess */
+ 	if (total)
+@@ -2821,8 +2801,8 @@ UINT32 I_GetFreeMem(UINT32 *total)
+ 	info.dwLength = sizeof (MEMORYSTATUS);
+ 	GlobalMemoryStatus( &info );
+ 	if (total)
+-		*total = (UINT32)info.dwTotalPhys;
+-	return (UINT32)info.dwAvailPhys;
++		*total = (size_t)info.dwTotalPhys;
++	return (size_t)info.dwAvailPhys;
+ #elif defined (__OS2__)
+ 	UINT32 pr_arena;
+ 
+@@ -2837,8 +2817,8 @@ UINT32 I_GetFreeMem(UINT32 *total)
+ 	/* Linux */
+ 	char buf[1024];
+ 	char *memTag;
+-	UINT32 freeKBytes;
+-	UINT32 totalKBytes;
++	size_t freeKBytes;
++	size_t totalKBytes;
+ 	INT32 n;
+ 	INT32 meminfo_fd = -1;
+ 	long Cached;
+@@ -2869,7 +2849,7 @@ UINT32 I_GetFreeMem(UINT32 *total)
+ 	}
+ 
+ 	memTag += sizeof (MEMTOTAL);
+-	totalKBytes = atoi(memTag);
++	totalKBytes = (size_t)atoi(memTag);
+ 
+ 	if ((memTag = strstr(buf, MEMAVAILABLE)) == NULL)
+ 	{
+diff --git a/src/sdl/i_video.c b/src/sdl/i_video.c
+index 77bf414cc..7f6875463 100644
+--- a/src/sdl/i_video.c
++++ b/src/sdl/i_video.c
+@@ -20,6 +20,7 @@
+ /// \brief SRB2 graphics stuff for SDL
+ 
+ #include <stdlib.h>
++#include <errno.h>
+ 
+ #include <signal.h>
+ 
+@@ -32,6 +33,7 @@
+ #include "SDL.h"
+ 
+ #ifdef _MSC_VER
++#include <windows.h>
+ #pragma warning(default : 4214 4244)
+ #endif
+ 
+@@ -67,6 +69,7 @@
+ #include "../i_sound.h"  // midi pause/unpause
+ #include "../i_joy.h"
+ #include "../st_stuff.h"
++#include "../hu_stuff.h"
+ #include "../g_game.h"
+ #include "../i_video.h"
+ #include "../console.h"
+@@ -91,13 +94,14 @@ static INT32 numVidModes = -1;
+ */
+ static char vidModeName[33][32]; // allow 33 different modes
+ 
+-rendermode_t rendermode=render_soft;
++rendermode_t rendermode = render_none;
+ 
+ boolean highcolor = false;
+ 
+ // synchronize page flipping with screen refresh
+ consvar_t cv_vidwait = {"vid_wait", "On", CV_SAVE, CV_OnOff, NULL, 0, NULL, NULL, 0, 0, NULL};
+ static consvar_t cv_stretch = {"stretch", "Off", CV_SAVE|CV_NOSHOWHELP, CV_OnOff, NULL, 0, NULL, NULL, 0, 0, NULL};
++static consvar_t cv_alwaysgrabmouse = {"alwaysgrabmouse", "Off", CV_SAVE, CV_OnOff, NULL, 0, NULL, NULL, 0, 0, NULL};
+ 
+ UINT8 graphics_started = 0; // Is used in console.c and screen.c
+ 
+@@ -107,6 +111,7 @@ static SDL_bool disable_fullscreen = SDL_FALSE;
+ #define USE_FULLSCREEN (disable_fullscreen||!allow_fullscreen)?0:cv_fullscreen.value
+ static SDL_bool disable_mouse = SDL_FALSE;
+ #define USE_MOUSEINPUT (!disable_mouse && cv_usemouse.value && havefocus)
++#define IGNORE_MOUSE (!cv_alwaysgrabmouse.value && (menuactive || paused || con_destlines || chat_on || gamestate != GS_LEVEL))
+ #define MOUSE_MENU false //(!disable_mouse && cv_usemouse.value && menuactive && !USE_FULLSCREEN)
+ #define MOUSEBUTTONS_MAX MOUSEBUTTONS
+ 
+@@ -358,6 +363,15 @@ static INT32 Impl_SDL_Scancode_To_Keycode(SDL_Scancode code)
+ 	return 0;
+ }
+ 
++
++static void SDLdoGrabMouse(void)
++{
++	SDL_ShowCursor(SDL_DISABLE);
++	SDL_SetWindowGrab(window, SDL_TRUE);
++	if (SDL_SetRelativeMouseMode(SDL_TRUE) == 0) // already warps mouse if successful
++		wrapmouseok = SDL_TRUE; // TODO: is wrapmouseok or HalfWarpMouse needed anymore?
++}
++
+ static void SDLdoUngrabMouse(void)
+ {
+ 	SDL_ShowCursor(SDL_ENABLE);
+@@ -369,12 +383,15 @@ static void SDLdoUngrabMouse(void)
+ void SDLforceUngrabMouse(void)
+ {
+ 	if (SDL_WasInit(SDL_INIT_VIDEO)==SDL_INIT_VIDEO && window != NULL)
+-	{
+-		SDL_ShowCursor(SDL_ENABLE);
+-		SDL_SetWindowGrab(window, SDL_FALSE);
+-		wrapmouseok = SDL_FALSE;
+-		SDL_SetRelativeMouseMode(SDL_FALSE);
+-	}
++		SDLdoUngrabMouse();
++}
++
++void I_UpdateMouseGrab(void)
++{
++	if (SDL_WasInit(SDL_INIT_VIDEO) == SDL_INIT_VIDEO && window != NULL
++	&& SDL_GetMouseFocus() == window && SDL_GetKeyboardFocus() == window
++	&& !IGNORE_MOUSE)
++		SDLdoGrabMouse();
+ }
+ 
+ static void VID_Command_NumModes_f (void)
+@@ -580,12 +597,19 @@ static void Impl_HandleWindowEvent(SDL_WindowEvent evt)
+ 			if (cv_usemouse.value) I_StartupMouse();
+ 		}
+ 		//else firsttimeonmouse = SDL_FALSE;
++
++		if (USE_MOUSEINPUT && !IGNORE_MOUSE)
++			SDLdoGrabMouse();
++
+ 	}
+ 	else if (!mousefocus && !kbfocus)
+ 	{
+ 		// Tell game we lost focus, pause music
+ 		window_notinfocus = true;
+-		I_PauseSong();
++		if (! cv_playmusicifunfocused.value)
++			S_PauseAudio();
++		if (! cv_playsoundsifunfocused.value)
++			S_StopSounds();
+ 
+ 		if (!disable_mouse)
+ 		{
+@@ -622,11 +646,14 @@ static void Impl_HandleKeyboardEvent(SDL_KeyboardEvent evt, Uint32 type)
+ 
+ static void Impl_HandleMouseMotionEvent(SDL_MouseMotionEvent evt)
+ {
++	static boolean firstmove = true;
++
+ 	if (USE_MOUSEINPUT)
+ 	{
+-		if ((SDL_GetMouseFocus() != window && SDL_GetKeyboardFocus() != window))
++		if ((SDL_GetMouseFocus() != window && SDL_GetKeyboardFocus() != window) || (IGNORE_MOUSE && !firstmove))
+ 		{
+ 			SDLdoUngrabMouse();
++			firstmove = false;
+ 			return;
+ 		}
+ 
+@@ -640,6 +667,7 @@ static void Impl_HandleMouseMotionEvent(SDL_MouseMotionEvent evt)
+ 				mousemovey += -evt.yrel;
+ 				SDL_SetWindowGrab(window, SDL_TRUE);
+ 			}
++			firstmove = false;
+ 			return;
+ 		}
+ 
+@@ -647,6 +675,7 @@ static void Impl_HandleMouseMotionEvent(SDL_MouseMotionEvent evt)
+ 		// of the screen then ignore it.
+ 		if ((evt.x == realwidth/2) && (evt.y == realheight/2))
+ 		{
++			firstmove = false;
+ 			return;
+ 		}
+ 
+@@ -656,11 +685,14 @@ static void Impl_HandleMouseMotionEvent(SDL_MouseMotionEvent evt)
+ 		// -- Monster Iestyn
+ 		if (SDL_GetMouseFocus() == window && SDL_GetKeyboardFocus() == window)
+ 		{
+-			SDL_SetWindowGrab(window, SDL_TRUE);
++			SDLdoGrabMouse();
++			/*SDL_SetWindowGrab(window, SDL_TRUE);
+ 			if (SDL_SetRelativeMouseMode(SDL_TRUE) == 0) // already warps mouse if successful
+-				wrapmouseok = SDL_TRUE; // TODO: is wrapmouseok or HalfWarpMouse needed anymore?
++				wrapmouseok = SDL_TRUE; // TODO: is wrapmouseok or HalfWarpMouse needed anymore?*/
+ 		}
+ 	}
++
++	firstmove = false;
+ }
+ 
+ static void Impl_HandleMouseButtonEvent(SDL_MouseButtonEvent evt, Uint32 type)
+@@ -674,7 +706,7 @@ static void Impl_HandleMouseButtonEvent(SDL_MouseButtonEvent evt, Uint32 type)
+ 	// this apparently makes a mouse button down event but not a mouse button up event,
+ 	// resulting in whatever key was pressed down getting "stuck" if we don't ignore it.
+ 	// -- Monster Iestyn (28/05/18)
+-	if (SDL_GetMouseFocus() != window)
++	if (SDL_GetMouseFocus() != window || IGNORE_MOUSE)
+ 		return;
+ 
+ 	/// \todo inputEvent.button.which
+@@ -926,8 +958,8 @@ void I_StartupMouse(void)
+ 	}
+ 	else
+ 		firsttimeonmouse = SDL_FALSE;
+-	if (cv_usemouse.value)
+-		return;
++	if (cv_usemouse.value && !IGNORE_MOUSE)
++		SDLdoGrabMouse();
+ 	else
+ 		SDLdoUngrabMouse();
+ }
+@@ -1292,6 +1324,7 @@ INT32 VID_SetMode(INT32 modeNum)
+ 	//Impl_SetWindowName("SRB2 "VERSIONSTRING);
+ 
+ 	SDLSetMode(vid.width, vid.height, USE_FULLSCREEN);
++	Impl_VideoSetupBuffer();
+ 
+ 	if (rendermode == render_soft)
+ 	{
+@@ -1301,7 +1334,6 @@ INT32 VID_SetMode(INT32 modeNum)
+ 			bufSurface = NULL;
+ 		}
+ 
+-		Impl_VideoSetupBuffer();
+ 	}
+ 
+ 	return SDL_TRUE;
+@@ -1329,7 +1361,7 @@ static SDL_bool Impl_CreateWindow(SDL_bool fullscreen)
+ #endif
+ 
+ 	// Create a window
+-	window = SDL_CreateWindow("SRB2 "VERSIONSTRING, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
++	window = SDL_CreateWindow("SRB2 Legacy "VERSIONSTRING, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
+ 			realwidth, realheight, flags);
+ 
+ 	if (window == NULL)
+@@ -1424,7 +1456,7 @@ static void Impl_VideoSetupSDLBuffer(void)
+ static void Impl_VideoSetupBuffer(void)
+ {
+ 	// Set up game's software render buffer
+-	if (rendermode == render_soft)
++	//if (rendermode == render_soft)
+ 	{
+ 		vid.rowbytes = vid.width * vid.bpp;
+ 		vid.direct = NULL;
+@@ -1438,6 +1470,13 @@ static void Impl_VideoSetupBuffer(void)
+ 	}
+ }
+ 
++static FILE *
++OpenRendererFile (const char * mode)
++{
++	char * path = va(pandf,srb2home,"renderer.txt");
++	return fopen(path, mode);
++}
++
+ void I_StartupGraphics(void)
+ {
+ 	if (dedicated)
+@@ -1454,6 +1493,7 @@ void I_StartupGraphics(void)
+ 	COM_AddCommand ("vid_mode", VID_Command_Mode_f);
+ 	CV_RegisterVar (&cv_vidwait);
+ 	CV_RegisterVar (&cv_stretch);
++	CV_RegisterVar (&cv_alwaysgrabmouse);
+ 	disable_mouse = M_CheckParm("-nomouse");
+ 	disable_fullscreen = M_CheckParm("-win") ? 1 : 0;
+ 
+@@ -1483,6 +1523,62 @@ void I_StartupGraphics(void)
+ 		rendermode = render_soft;
+ 	}
+ 
++	if (rendermode == render_none)
++	{
++#ifdef HWRENDER
++		char   line[16];
++		char * word;
++		FILE * file = OpenRendererFile("r");
++		if (file != NULL)
++		{
++			if (fgets(line, sizeof line, file) != NULL)
++			{
++				word = strtok(line, "\n");
++
++				if (strcasecmp(word, "software") == 0)
++				{
++					rendermode = render_soft;
++				}
++				else if (strcasecmp(word, "opengl") == 0)
++				{
++					rendermode = render_opengl;
++				}
++
++				if (rendermode != render_none)
++				{
++					CONS_Printf("Using last known renderer: %s\n", line);
++				}
++			}
++			fclose(file);
++		}
++#endif
++		if (rendermode == render_none)
++		{
++			rendermode = render_soft;
++			CONS_Printf("Using default software renderer.\n");
++		}
++	}
++	else
++	{
++		FILE * file = OpenRendererFile("w");
++		if (file != NULL)
++		{
++			if (rendermode == render_soft)
++			{
++				fputs("software\n", file);
++			}
++			else if (rendermode == render_opengl)
++			{
++				fputs("opengl\n", file);
++			}
++			fclose(file);
++		}
++		else
++		{
++			CONS_Printf("Could not save renderer to file: %s\n", strerror(errno));
++		}
++	}
++
+ 	usesdl2soft = M_CheckParm("-softblit");
+ 	borderlesswindow = M_CheckParm("-borderless");
+ 
+@@ -1577,12 +1673,7 @@ void I_StartupGraphics(void)
+ 	SDL_RaiseWindow(window);
+ 
+ 	if (mousegrabok && !disable_mouse)
+-	{
+-		SDL_ShowCursor(SDL_DISABLE);
+-		SDL_SetRelativeMouseMode(SDL_TRUE);
+-		wrapmouseok = SDL_TRUE;
+-		SDL_SetWindowGrab(window, SDL_TRUE);
+-	}
++		SDLdoGrabMouse();
+ 
+ 	graphics_started = true;
+ }
+diff --git a/src/sdl/macosx/Srb2mac.xcodeproj/project.pbxproj b/src/sdl/macosx/Srb2mac.xcodeproj/project.pbxproj
+index 9297833e2..fd5266d9c 100644
+--- a/src/sdl/macosx/Srb2mac.xcodeproj/project.pbxproj
++++ b/src/sdl/macosx/Srb2mac.xcodeproj/project.pbxproj
+@@ -1219,7 +1219,7 @@
+ 		C01FCF4B08A954540054247B /* Debug */ = {
+ 			isa = XCBuildConfiguration;
+ 			buildSettings = {
+-				CURRENT_PROJECT_VERSION = 2.1.25;
++				CURRENT_PROJECT_VERSION = 2.1.26;
+ 				GCC_PREPROCESSOR_DEFINITIONS = (
+ 					"$(inherited)",
+ 					NORMALSRB2,
+@@ -1231,7 +1231,7 @@
+ 		C01FCF4C08A954540054247B /* Release */ = {
+ 			isa = XCBuildConfiguration;
+ 			buildSettings = {
+-				CURRENT_PROJECT_VERSION = 2.1.25;
++				CURRENT_PROJECT_VERSION = 2.1.26;
+ 				GCC_ENABLE_FIX_AND_CONTINUE = NO;
+ 				GCC_GENERATE_DEBUGGING_SYMBOLS = NO;
+ 				GCC_PREPROCESSOR_DEFINITIONS = (
+diff --git a/src/sdl/mixer_sound.c b/src/sdl/mixer_sound.c
+index 6e92a6f0b..0448eecee 100644
+--- a/src/sdl/mixer_sound.c
++++ b/src/sdl/mixer_sound.c
+@@ -72,6 +72,17 @@
+ #endif // HAVE_ZLIB
+ #endif // HAVE_LIBGME
+ 
++static UINT16 BUFFERSIZE = 2048;
++static UINT16 SAMPLERATE = 44100;
++
++#ifdef HAVE_OPENMPT
++#include "libopenmpt/libopenmpt.h"
++#endif
++
++/// ------------------------
++/// Audio Declarations
++/// ------------------------
++
+ UINT8 sound_started = false;
+ 
+ static Mix_Music *music;
+@@ -93,7 +104,13 @@ static void (*fading_callback)(void);
+ 
+ #ifdef HAVE_LIBGME
+ static Music_Emu *gme;
+-static INT32 current_track;
++static UINT16 current_track;
++#endif
++
++#ifdef HAVE_OPENMPT
++int mod_err = OPENMPT_ERROR_OK;
++static const char *mod_err_str;
++static UINT16 current_subsong;
+ #endif
+ 
+ static void var_cleanup(void)
+@@ -110,6 +127,29 @@ static void var_cleanup(void)
+ 	internal_volume = 100;
+ }
+ 
++#if defined (HAVE_LIBGME) && defined (HAVE_ZLIB)
++static const char* get_zlib_error(int zErr)
++{
++	switch (zErr)
++	{
++		case Z_ERRNO:
++			return "Z_ERRNO";
++		case Z_STREAM_ERROR:
++			return "Z_STREAM_ERROR";
++		case Z_DATA_ERROR:
++			return "Z_DATA_ERROR";
++		case Z_MEM_ERROR:
++			return "Z_MEM_ERROR";
++		case Z_BUF_ERROR:
++			return "Z_BUF_ERROR";
++		case Z_VERSION_ERROR:
++			return "Z_VERSION_ERROR";
++		default:
++			return "unknown error";
++	}
++}
++#endif
++
+ /// ------------------------
+ /// Audio System
+ /// ------------------------
+@@ -143,16 +183,21 @@ void I_StartupSound(void)
+ 	music_volume = sfx_volume = 0;
+ 
+ #if SDL_MIXER_VERSION_ATLEAST(1,2,11)
+-	Mix_Init(MIX_INIT_FLAC|MIX_INIT_MOD|MIX_INIT_MP3|MIX_INIT_OGG);
++	Mix_Init(MIX_INIT_FLAC|MIX_INIT_MP3|MIX_INIT_OGG|MIX_INIT_MOD);
+ #endif
+ 
+-	if (Mix_OpenAudio(44100, AUDIO_S16SYS, 2, 2048) < 0)
++	if (Mix_OpenAudio(SAMPLERATE, AUDIO_S16SYS, 2, BUFFERSIZE) < 0)
+ 	{
+ 		CONS_Alert(CONS_ERROR, "Error starting SDL_Mixer: %s\n", Mix_GetError());
+ 		// call to start audio failed -- we do not have it
+ 		return;
+ 	}
+ 
++#ifdef HAVE_OPENMPT
++	CONS_Printf("libopenmpt version: %s\n", openmpt_get_string("library_version"));
++	CONS_Printf("libopenmpt build date: %s\n", openmpt_get_string("build"));
++#endif
++
+ 	sound_started = true;
+ 	songpaused = false;
+ 	Mix_AllocateChannels(256);
+@@ -175,6 +220,10 @@ void I_ShutdownSound(void)
+ 	if (gme)
+ 		gme_delete(gme);
+ #endif
++#ifdef HAVE_OPENMPT
++	if (openmpt_mhandle)
++		openmpt_module_destroy(openmpt_mhandle);
++#endif
+ }
+ 
+ void I_UpdateSound(void)
+@@ -346,7 +395,8 @@ void *I_GetSfx(sfxinfo_t *sfx)
+ 		if (zErr == Z_OK) // We're good to go
+ 		{
+ 			zErr = inflate(&stream, Z_FINISH);
+-			if (zErr == Z_STREAM_END) {
++			if (zErr == Z_STREAM_END)
++			{
+ 				// Run GME on new data
+ 				if (!gme_open_data(inflatedData, inflatedLen, &emu, 44100))
+ 				{
+@@ -371,51 +421,11 @@ void *I_GetSfx(sfxinfo_t *sfx)
+ 				}
+ 			}
+ 			else
+-			{
+-				const char *errorType;
+-				switch (zErr)
+-				{
+-					case Z_ERRNO:
+-						errorType = "Z_ERRNO"; break;
+-					case Z_STREAM_ERROR:
+-						errorType = "Z_STREAM_ERROR"; break;
+-					case Z_DATA_ERROR:
+-						errorType = "Z_DATA_ERROR"; break;
+-					case Z_MEM_ERROR:
+-						errorType = "Z_MEM_ERROR"; break;
+-					case Z_BUF_ERROR:
+-						errorType = "Z_BUF_ERROR"; break;
+-					case Z_VERSION_ERROR:
+-						errorType = "Z_VERSION_ERROR"; break;
+-					default:
+-						errorType = "unknown error";
+-				}
+-				CONS_Alert(CONS_ERROR,"Encountered %s when running inflate: %s\n", errorType, stream.msg);
+-			}
++				CONS_Alert(CONS_ERROR,"Encountered %s when running inflate: %s\n", get_zlib_error(zErr), stream.msg);
+ 			(void)inflateEnd(&stream);
+ 		}
+ 		else // Hold up, zlib's got a problem
+-		{
+-			const char *errorType;
+-			switch (zErr)
+-			{
+-				case Z_ERRNO:
+-					errorType = "Z_ERRNO"; break;
+-				case Z_STREAM_ERROR:
+-					errorType = "Z_STREAM_ERROR"; break;
+-				case Z_DATA_ERROR:
+-					errorType = "Z_DATA_ERROR"; break;
+-				case Z_MEM_ERROR:
+-					errorType = "Z_MEM_ERROR"; break;
+-				case Z_BUF_ERROR:
+-					errorType = "Z_BUF_ERROR"; break;
+-				case Z_VERSION_ERROR:
+-					errorType = "Z_VERSION_ERROR"; break;
+-				default:
+-					errorType = "unknown error";
+-			}
+-			CONS_Alert(CONS_ERROR,"Encountered %s when running inflateInit: %s\n", errorType, stream.msg);
+-		}
++			CONS_Alert(CONS_ERROR,"Encountered %s when running inflateInit: %s\n", get_zlib_error(zErr), stream.msg);
+ 		Z_Free(inflatedData); // GME didn't open jack, but don't let that stop us from freeing this up
+ #else
+ 		return NULL; // No zlib support
+@@ -625,12 +635,39 @@ static void mix_gme(void *udata, Uint8 *stream, int len)
+ 	// play gme into stream
+ 	gme_play(gme, len/2, (short *)stream);
+ 
++	// Limiter to prevent music from being disorted with some formats
++	if (music_volume >= 18)
++		music_volume = 18;
++
+ 	// apply volume to stream
+-	for (i = 0, p = (short *)stream; i < len/2; i++, p++)
+-		*p = ((INT32)*p) * (music_volume*internal_volume/100)*2 / 42;
++	for (i = 0, p = (short *)stream; i < len / 2; i++, p++)
++		*p = ((INT32)*p) * music_volume * internal_volume / 100 / 20;
+ }
+ #endif
+ 
++#ifdef HAVE_OPENMPT
++static void mix_openmpt(void *udata, Uint8 *stream, int len)
++{
++	int i;
++	short *p;
++
++	(void)udata;
++
++	if (!openmpt_mhandle || songpaused)
++		return;
++
++	// Play module into stream
++	openmpt_module_read_interleaved_stereo(openmpt_mhandle, SAMPLERATE, BUFFERSIZE, (short *)stream);
++
++	// Limiter to prevent music from being disorted with some formats
++	if (music_volume >= 18)
++		music_volume = 18;
++
++	// apply volume to stream
++	for (i = 0, p = (short *)stream; i < len / 2; i++, p++)
++		*p = ((INT32)*p) * music_volume * internal_volume / 100 / 20;
++}
++#endif
+ 
+ /// ------------------------
+ /// Music System
+@@ -655,6 +692,10 @@ musictype_t I_SongType(void)
+ 	if (gme)
+ 		return MU_GME;
+ 	else
++#endif
++#ifdef HAVE_OPENMPT
++	if (openmpt_mhandle)
++		return MU_MOD_EX;
+ #endif
+ 	if (!music)
+ 		return MU_NONE;
+@@ -673,6 +714,9 @@ boolean I_SongPlaying(void)
+ 	return (
+ #ifdef HAVE_LIBGME
+ 		(I_SongType() == MU_GME && gme) ||
++#endif
++#ifdef HAVE_OPENMPT
++		(I_SongType() == MU_MOD_EX && openmpt_mhandle) ||
+ #endif
+ 		music != NULL
+ 	);
+@@ -699,8 +743,28 @@ boolean I_SetSongSpeed(float speed)
+ 		SDL_UnlockAudio();
+ 		return true;
+ 	}
++	else
++#endif
++#ifdef HAVE_OPENMPT
++	if (openmpt_mhandle)
++	{
++		if (speed > 4.0f)
++			speed = 4.0f; // Limit this to 4x to prevent crashing, stupid fix but... ~SteelT 27/9/19
++#if OPENMPT_API_VERSION_MAJOR < 1 && OPENMPT_API_VERSION_MINOR < 5
++		{
++			// deprecated in 0.5.0
++			char modspd[13];
++			sprintf(modspd, "%g", speed);
++			openmpt_module_ctl_set(openmpt_mhandle, "play.tempo_factor", modspd);
++		}
++#else
++		openmpt_module_ctl_set_floatingpoint(openmpt_mhandle, "play.tempo_factor", (double)speed);
++#endif
++		return true;
++	}
+ #else
+ 	(void)speed;
++	return false;
+ #endif
+ 	return false;
+ }
+@@ -741,6 +805,11 @@ UINT32 I_GetSongLength(void)
+ 		return max(length, 0);
+ 	}
+ 	else
++#endif
++#ifdef HAVE_OPENMPT
++	if (openmpt_mhandle)
++		return (UINT32)(openmpt_module_get_duration_seconds(openmpt_mhandle) * 1000.);
++	else
+ #endif
+ 	if (!music || I_SongType() == MU_MOD || I_SongType() == MU_MID)
+ 		return 0;
+@@ -826,6 +895,16 @@ boolean I_SetSongPosition(UINT32 position)
+ 		// 	return true;
+ 	}
+ 	else
++#endif
++#ifdef HAVE_OPENMPT
++	if (openmpt_mhandle)
++	{
++		// This isn't 100% correct because we don't account for loop points because we can't get them.
++		// But if you seek past end of song, OpenMPT seeks to 0. So adjust the position anyway.
++		openmpt_module_set_position_seconds(openmpt_mhandle, (double)(get_adjusted_position(position)/1000.0L)); // returns new position
++		return true;
++	}
++	else
+ #endif
+ 	if (!music || I_SongType() == MU_MID)
+ 		return false;
+@@ -883,6 +962,14 @@ UINT32 I_GetSongPosition(void)
+ 		return max(position, 0);
+ 	}
+ 	else
++#endif
++#ifdef HAVE_OPENMPT
++	if (openmpt_mhandle)
++		// This will be incorrect if we adjust for length because we can't get loop points.
++		// So return unadjusted. See note in SetMusicPosition: we adjust for that.
++		return (UINT32)(openmpt_module_get_position_seconds(openmpt_mhandle)*1000.);
++		//return get_adjusted_position((UINT32)(openmpt_module_get_position_seconds(openmpt_mhandle)*1000.));
++	else
+ #endif
+ 	if (!music || I_SongType() == MU_MID)
+ 		return 0;
+@@ -912,6 +999,9 @@ boolean I_LoadSong(char *data, size_t len)
+ 	if (music
+ #ifdef HAVE_LIBGME
+ 		|| gme
++#endif
++#ifdef HAVE_OPENMPT
++		|| openmpt_mhandle
+ #endif
+ 	)
+ 		I_UnloadSong();
+@@ -942,79 +1032,58 @@ boolean I_LoadSong(char *data, size_t len)
+ 		if (zErr == Z_OK) // We're good to go
+ 		{
+ 			zErr = inflate(&stream, Z_FINISH);
+-			if (zErr == Z_STREAM_END) {
++			if (zErr == Z_STREAM_END)
++			{
+ 				// Run GME on new data
+ 				if (!gme_open_data(inflatedData, inflatedLen, &gme, 44100))
+ 				{
+-					gme_equalizer_t eq = {GME_TREBLE, GME_BASS, 0,0,0,0,0,0,0,0};
+-					gme_start_track(gme, 0);
+-					current_track = 0;
+-					gme_set_equalizer(gme, &eq);
+-					Mix_HookMusic(mix_gme, gme);
+ 					Z_Free(inflatedData); // GME supposedly makes a copy for itself, so we don't need this lying around
+ 					return true;
+ 				}
+ 			}
+ 			else
+-			{
+-				const char *errorType;
+-				switch (zErr)
+-				{
+-					case Z_ERRNO:
+-						errorType = "Z_ERRNO"; break;
+-					case Z_STREAM_ERROR:
+-						errorType = "Z_STREAM_ERROR"; break;
+-					case Z_DATA_ERROR:
+-						errorType = "Z_DATA_ERROR"; break;
+-					case Z_MEM_ERROR:
+-						errorType = "Z_MEM_ERROR"; break;
+-					case Z_BUF_ERROR:
+-						errorType = "Z_BUF_ERROR"; break;
+-					case Z_VERSION_ERROR:
+-						errorType = "Z_VERSION_ERROR"; break;
+-					default:
+-						errorType = "unknown error";
+-				}
+-				CONS_Alert(CONS_ERROR,"Encountered %s when running inflate: %s\n", errorType, stream.msg);
+-			}
++				CONS_Alert(CONS_ERROR, "Encountered %s when running inflate: %s\n", get_zlib_error(zErr), stream.msg);
+ 			(void)inflateEnd(&stream);
+ 		}
+ 		else // Hold up, zlib's got a problem
+-		{
+-			const char *errorType;
+-			switch (zErr)
+-			{
+-				case Z_ERRNO:
+-					errorType = "Z_ERRNO"; break;
+-				case Z_STREAM_ERROR:
+-					errorType = "Z_STREAM_ERROR"; break;
+-				case Z_DATA_ERROR:
+-					errorType = "Z_DATA_ERROR"; break;
+-				case Z_MEM_ERROR:
+-					errorType = "Z_MEM_ERROR"; break;
+-				case Z_BUF_ERROR:
+-					errorType = "Z_BUF_ERROR"; break;
+-				case Z_VERSION_ERROR:
+-					errorType = "Z_VERSION_ERROR"; break;
+-				default:
+-					errorType = "unknown error";
+-			}
+-			CONS_Alert(CONS_ERROR,"Encountered %s when running inflateInit: %s\n", errorType, stream.msg);
+-		}
++			CONS_Alert(CONS_ERROR, "Encountered %s when running inflateInit: %s\n", get_zlib_error(zErr), stream.msg);
+ 		Z_Free(inflatedData); // GME didn't open jack, but don't let that stop us from freeing this up
++		return false;
+ #else
+-		CONS_Alert(CONS_ERROR,"Cannot decompress VGZ; no zlib support\n");
+-		return true;
++		CONS_Alert(CONS_ERROR, "Cannot decompress VGZ; no zlib support\n");
++		return false;
+ #endif
+ 	}
+ 	else if (!gme_open_data(data, len, &gme, 44100))
+-	{
+-		gme_equalizer_t eq = {GME_TREBLE, GME_BASS, 0,0,0,0,0,0,0,0};
+-		gme_set_equalizer(gme, &eq);
+ 		return true;
+-	}
+ #endif
+ 
++#ifdef HAVE_OPENMPT
++	size_t probesize;
++	int result;
++
++	if (len > openmpt_probe_file_header_get_recommended_size())
++		probesize = openmpt_probe_file_header_get_recommended_size();
++	else
++		probesize = len;
++
++	result = openmpt_probe_file_header(OPENMPT_PROBE_FILE_HEADER_FLAGS_DEFAULT, data, probesize, len, NULL, NULL, NULL, NULL, NULL, NULL);
++
++	if (result == OPENMPT_PROBE_FILE_HEADER_RESULT_SUCCESS) // We only cared if it succeeded, continue on if not.
++	{
++		openmpt_mhandle = openmpt_module_create_from_memory2(data, len, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
++		if (!openmpt_mhandle)
++		{
++			mod_err = openmpt_module_error_get_last(openmpt_mhandle);
++			mod_err_str = openmpt_error_string(mod_err);
++			CONS_Alert(CONS_ERROR, "openmpt_module_create_from_memory2: %s\n", mod_err_str);
++			return false;
++		}
++		else
++			return true;
++	}
++#endif	
++
+ 	rw = SDL_RWFromMem(data, len);
+ 	if (rw != NULL)
+ 	{
+@@ -1026,6 +1095,7 @@ boolean I_LoadSong(char *data, size_t len)
+ 		return false;
+ 	}
+ 
++
+ 	// Find the OGG loop point.
+ 	loop_point = 0.0f;
+ 	song_length = 0.0f;
+@@ -1070,6 +1140,13 @@ void I_UnloadSong(void)
+ 		gme_delete(gme);
+ 		gme = NULL;
+ 	}
++#endif
++#ifdef HAVE_OPENMPT
++	if (openmpt_mhandle)
++	{
++		openmpt_module_destroy(openmpt_mhandle);
++		openmpt_mhandle = NULL;
++	}
+ #endif
+ 	if (music)
+ 	{
+@@ -1083,12 +1160,31 @@ boolean I_PlaySong(boolean looping)
+ #ifdef HAVE_LIBGME
+ 	if (gme)
+ 	{
++		gme_equalizer_t eq = {GME_TREBLE, GME_BASS, 0,0,0,0,0,0,0,0};
++#if GME_VERSION >= 0x000603
++		if (looping)
++			gme_set_autoload_playback_limit(gme, 0);
++#endif
++		gme_set_equalizer(gme, &eq);
+ 		gme_start_track(gme, 0);
+ 		current_track = 0;
+ 		Mix_HookMusic(mix_gme, gme);
+ 		return true;
+ 	}
+ 	else
++#endif
++#ifdef HAVE_OPENMPT
++	if (openmpt_mhandle)
++	{
++		openmpt_module_select_subsong(openmpt_mhandle, 0);
++		openmpt_module_set_render_param(openmpt_mhandle, OPENMPT_MODULE_RENDER_INTERPOLATIONFILTER_LENGTH, cv_modfilter.value);
++		if (looping)
++			openmpt_module_set_repeat_count(openmpt_mhandle, -1); // Always repeat
++		current_subsong = 0;
++		Mix_HookMusic(mix_openmpt, openmpt_mhandle);
++		return true;
++	}
++	else
+ #endif
+ 	if (!music)
+ 		return false;
+@@ -1130,6 +1226,13 @@ void I_StopSong(void)
+ 		Mix_HookMusic(NULL, NULL);
+ 		current_track = -1;
+ 	}
++#endif
++#ifdef HAVE_OPENMPT
++	if (openmpt_mhandle)
++	{
++		Mix_HookMusic(NULL, NULL);
++		current_subsong = -1;
++	}
+ #endif
+ 	if (music)
+ 	{
+@@ -1191,15 +1294,13 @@ void I_SetMusicVolume(UINT8 volume)
+ boolean I_SetSongTrack(int track)
+ {
+ #ifdef HAVE_LIBGME
+-	if (current_track == track)
+-		return false;
+-
+ 	// If the specified track is within the number of tracks playing, then change it
+ 	if (gme)
+ 	{
++		if (current_track == track)
++			return false;
+ 		SDL_LockAudio();
+-		if (track >= 0
+-			&& track < gme_track_count(gme))
++		if (track >= 0 && track < gme_track_count(gme)-1)
+ 		{
+ 			gme_err_t gme_e = gme_start_track(gme, track);
+ 			if (gme_e != NULL)
+@@ -1216,8 +1317,24 @@ boolean I_SetSongTrack(int track)
+ 	}
+ 	else
+ #endif
+-	if (I_SongType() == MU_MOD)
+-		return !Mix_SetMusicPosition(track);
++#ifdef HAVE_OPENMPT
++	if (openmpt_mhandle)
++	{
++		if (current_subsong == track)
++			return false;
++		SDL_LockAudio();
++		if (track >= 0 && track < openmpt_module_get_num_subsongs(openmpt_mhandle))
++		{
++			openmpt_module_select_subsong(openmpt_mhandle, track);
++			current_subsong = track;
++			SDL_UnlockAudio();
++			return true;
++		}
++		SDL_UnlockAudio();
++
++		return false;
++	}
++#endif
+ 	(void)track;
+ 	return false;
+ }
+@@ -1311,3 +1428,4 @@ boolean I_FadeInPlaySong(UINT32 ms, boolean looping)
+ 		return false;
+ }
+ #endif
++
+diff --git a/src/sdl12/i_video.c b/src/sdl12/i_video.c
+index 349e06cba..153343fbc 100644
+--- a/src/sdl12/i_video.c
++++ b/src/sdl12/i_video.c
+@@ -1745,7 +1745,7 @@ INT32 VID_SetMode(INT32 modeNum)
+ 	BitsPerPixel = (Uint8)cv_scr_depth.value;
+ 	//vid.bpp = BitsPerPixel==8?1:2;
+ 	// Window title
+-	SDL_WM_SetCaption("SRB2 "VERSIONSTRING, "SRB2");
++	SDL_WM_SetCaption("SRB2 Legacy "VERSIONSTRING, "SRB2");
+ 
+ 	if (render_soft == rendermode)
+ 	{
+@@ -1933,9 +1933,9 @@ void I_StartupGraphics(void)
+ 
+ 	// Window title
+ #ifdef _WIN32_WCE
+-	SDL_WM_SetCaption("SRB2 "VERSIONSTRING, "SRB2");
++	SDL_WM_SetCaption("SRB2 Legacy"VERSIONSTRING, "SRB2");
+ #else
+-	SDL_WM_SetCaption("SRB2: Starting up", "SRB2");
++	SDL_WM_SetCaption("SRB2 Legacy: Starting up", "SRB2");
+ #endif
+ 
+ 	// Window icon
+diff --git a/src/sdl12/macosx/Srb2mac.xcodeproj/project.pbxproj b/src/sdl12/macosx/Srb2mac.xcodeproj/project.pbxproj
+index d67903819..6e1732875 100644
+--- a/src/sdl12/macosx/Srb2mac.xcodeproj/project.pbxproj
++++ b/src/sdl12/macosx/Srb2mac.xcodeproj/project.pbxproj
+@@ -1219,7 +1219,7 @@
+ 		C01FCF4B08A954540054247B /* Debug */ = {
+ 			isa = XCBuildConfiguration;
+ 			buildSettings = {
+-				CURRENT_PROJECT_VERSION = 2.1.25;
++				CURRENT_PROJECT_VERSION = 2.1.26;
+ 				GCC_PREPROCESSOR_DEFINITIONS = (
+ 					"$(inherited)",
+ 					NORMALSRB2,
+@@ -1231,7 +1231,7 @@
+ 		C01FCF4C08A954540054247B /* Release */ = {
+ 			isa = XCBuildConfiguration;
+ 			buildSettings = {
+-				CURRENT_PROJECT_VERSION = 2.1.25;
++				CURRENT_PROJECT_VERSION = 2.1.26;
+ 				GCC_ENABLE_FIX_AND_CONTINUE = NO;
+ 				GCC_GENERATE_DEBUGGING_SYMBOLS = NO;
+ 				GCC_PREPROCESSOR_DEFINITIONS = (
+diff --git a/src/sdl12/sdl_sound.c b/src/sdl12/sdl_sound.c
+index ed1afd8e2..1a7525fee 100644
+--- a/src/sdl12/sdl_sound.c
++++ b/src/sdl12/sdl_sound.c
+@@ -1435,7 +1435,7 @@ static boolean LoadSong(void *data, size_t lumplength, size_t selectpos)
+ 
+ 	if (fwrite(data, lumplength, 1, midfile) == 0)
+ 	{
+-		CONS_Printf(M_GetText("Couldn't write music into file %s because %s\n"), tempname, strerror(ferror(midfile)));
++		CONS_Printf(M_GetText("Couldn't write music into file %s because %s\n"), tempname, M_FileError(midfile));
+ 		Z_Free(data);
+ 		fclose(midfile);
+ 		return false;
+diff --git a/src/st_stuff.c b/src/st_stuff.c
+index 287aea134..75c26170c 100644
+--- a/src/st_stuff.c
++++ b/src/st_stuff.c
+@@ -135,10 +135,12 @@ hudinfo_t hudinfo[NUMHUDITEMS] =
+ 	{  16,  42}, // HUD_RINGS
+ 	{ 220,  10}, // HUD_RINGSSPLIT
+ 	{ 112,  42}, // HUD_RINGSNUM
++	{ 136,  42}, // HUD_RINGSNUMTICS
+ 	{ 288,  10}, // HUD_RINGSNUMSPLIT
+ 
+ 	{  16,  10}, // HUD_SCORE
+ 	{ 128,  10}, // HUD_SCORENUM
++	{ 136,  10}, // HUD_SCORENUMMODERN
+ 
+ 	{  17,  26}, // HUD_TIME
+ 	{ 136,  10}, // HUD_TIMESPLIT
+@@ -620,6 +622,9 @@ static void ST_drawScore(void)
+ 		else
+ 			ST_DrawNumFromHud(HUD_SCORENUM, op_displayflags);
+ 	}
++
++	if (!splitscreen && (cv_scorepos.value == 1))
++		ST_DrawNumFromHud(HUD_SCORENUMMODERN, stplyr->score);
+ 	else
+ 		ST_DrawNumFromHud(HUD_SCORENUM, stplyr->score);
+ }
+@@ -646,7 +651,7 @@ static void ST_drawTime(void)
+ 		tictrn  = G_TicsToCentiseconds(tics);
+ 	}
+ 
+-	if (cv_timetic.value == 1) // Tics only -- how simple is this?
++	if (cv_timetic.value == 3) // Tics only -- how simple is this?
+ 		ST_DrawNumFromHudWS(HUD_SECONDS, tics);
+ 	else
+ 	{
+@@ -654,7 +659,7 @@ static void ST_drawTime(void)
+ 		ST_DrawPatchFromHudWS(HUD_TIMECOLON, sbocolon); // Colon
+ 		ST_DrawPadNumFromHudWS(HUD_SECONDS, seconds, 2); // Seconds
+ 
+-		if (!splitscreen && (cv_timetic.value == 2 || modeattacking)) // there's not enough room for tics in splitscreen, don't even bother trying!
++		if (!splitscreen && (cv_timetic.value == 1 || cv_timetic.value == 2 || modeattacking)) // there's not enough room for tics in splitscreen, don't even bother trying!
+ 		{
+ 			ST_DrawPatchFromHud(HUD_TIMETICCOLON, sboperiod); // Period
+ 			ST_DrawPadNumFromHud(HUD_TICS, tictrn, 2); // Tics
+@@ -679,7 +684,10 @@ static inline void ST_drawRings(void)
+ 				ringnum += players[i].mo->health - 1;
+ 	}
+ 
+-	ST_DrawNumFromHudWS(HUD_RINGSNUM, ringnum);
++		if (!splitscreen && (cv_timetic.value < 2 || cv_timetic.value == 3))
++			ST_DrawNumFromHudWS(HUD_RINGSNUM, ringnum);
++		else
++			ST_DrawNumFromHudWS(HUD_RINGSNUMTICS, ringnum);
+ }
+ 
+ static void ST_drawLives(void)
+@@ -1954,3 +1962,4 @@ void ST_Drawer(void)
+ 		}
+ 	}
+ }
++
+diff --git a/src/st_stuff.h b/src/st_stuff.h
+index 6f05bbf3e..9da5f5a30 100644
+--- a/src/st_stuff.h
++++ b/src/st_stuff.h
+@@ -89,10 +89,12 @@ typedef enum
+ 	HUD_RINGS,
+ 	HUD_RINGSSPLIT,
+ 	HUD_RINGSNUM,
++	HUD_RINGSNUMTICS,
+ 	HUD_RINGSNUMSPLIT,
+ 
+ 	HUD_SCORE,
+ 	HUD_SCORENUM,
++	HUD_SCORENUMMODERN,
+ 
+ 	HUD_TIME,
+ 	HUD_TIMESPLIT,
+@@ -125,3 +127,4 @@ extern hudinfo_t hudinfo[NUMHUDITEMS];
+ extern UINT16 objectsdrawn;
+ 
+ #endif
++
+diff --git a/src/string.c b/src/string.c
+index 2a03e8729..0334fe14d 100644
+--- a/src/string.c
++++ b/src/string.c
+@@ -15,7 +15,7 @@
+ #include <string.h>
+ #include "doomdef.h"
+ 
+-#if !defined (__APPLE__)
++#ifndef SRB2_HAVE_STRLCPY
+ 
+ // Like the OpenBSD version, but it doesn't check for src not being a valid
+ // C string.
+diff --git a/src/v_video.c b/src/v_video.c
+index c3b29e157..cdd851c47 100644
+--- a/src/v_video.c
++++ b/src/v_video.c
+@@ -2207,6 +2207,29 @@ Unoptimized version
+ #endif
+ }
+ 
++// Taken from my videos-in-SRB2 project
++// Generates a color look-up table
++// which has up to 64 colors at each channel
++// (see the defines in v_video.h)
++
++UINT8 colorlookup[CLUTSIZE][CLUTSIZE][CLUTSIZE];
++
++void InitColorLUT(RGBA_t *palette)
++{
++	UINT8 r, g, b;
++	static boolean clutinit = false;
++	static RGBA_t *lastpalette = NULL;
++	if ((!clutinit) || (lastpalette != palette))
++	{
++		for (r = 0; r < CLUTSIZE; r++)
++			for (g = 0; g < CLUTSIZE; g++)
++				for (b = 0; b < CLUTSIZE; b++)
++					colorlookup[r][g][b] = NearestColor(r << SHIFTCOLORBITS, g << SHIFTCOLORBITS, b << SHIFTCOLORBITS);
++		clutinit = true;
++		lastpalette = palette;
++	}
++}
++
+ // V_Init
+ // old software stuff, buffers are allocated at video mode setup
+ // here we set the screens[x] pointers accordingly
+@@ -2218,13 +2241,8 @@ void V_Init(void)
+ 	const INT32 screensize = vid.rowbytes * vid.height;
+ 
+ 	LoadMapPalette();
+-	// hardware modes do not use screens[] pointers
+ 	for (i = 0; i < NUMSCREENS; i++)
+ 		screens[i] = NULL;
+-	if (rendermode != render_soft)
+-	{
+-		return; // be sure to cause a NULL read/write error so we detect it, in case of..
+-	}
+ 
+ 	// start address of NUMSCREENS * width*height vidbuffers
+ 	if (base)
+@@ -2242,3 +2260,4 @@ void V_Init(void)
+ 		CONS_Debug(DBG_RENDER, " screens[%d] = %x\n", i, screens[i]);
+ #endif
+ }
++
+diff --git a/src/v_video.h b/src/v_video.h
+index 877a619b5..748722748 100644
+--- a/src/v_video.h
++++ b/src/v_video.h
+@@ -33,6 +33,18 @@ extern consvar_t cv_ticrate, cv_usegamma, cv_allcaps, cv_constextsize;
+ // Allocates buffer screens, call before R_Init.
+ void V_Init(void);
+ 
++// Taken from my videos-in-SRB2 project
++// Generates a color look-up table
++// which has up to 64 colors at each channel
++
++#define COLORBITS 6
++#define SHIFTCOLORBITS (8-COLORBITS)
++#define CLUTSIZE (1<<COLORBITS)
++
++extern UINT8 colorlookup[CLUTSIZE][CLUTSIZE][CLUTSIZE];
++
++void InitColorLUT(RGBA_t *palette);
++
+ // Set the current RGB palette lookup to use for palettized graphics
+ void V_SetPalette(INT32 palettenum);
+ 
+@@ -202,3 +214,4 @@ void VID_BlitLinearScreen(const UINT8 *srcptr, UINT8 *destptr, INT32 width, INT3
+ 	size_t destrowbytes);
+ 
+ #endif
++
+diff --git a/src/w_wad.c b/src/w_wad.c
+index 7de64f9ad..a20e458ae 100644
+--- a/src/w_wad.c
++++ b/src/w_wad.c
+@@ -370,7 +370,7 @@ static lumpinfo_t* ResGetLumpsWad (FILE* handle, UINT16* nlmp, const char* filen
+ 	// read the header
+ 	if (fread(&header, 1, sizeof header, handle) < sizeof header)
+ 	{
+-		CONS_Alert(CONS_ERROR, M_GetText("Can't read wad header because %s\n"), strerror(ferror(handle)));
++		CONS_Alert(CONS_ERROR, M_GetText("Can't read wad header because %s\n"), M_FileError(handle));
+ 		return NULL;
+ 	}
+ 
+@@ -393,7 +393,7 @@ static lumpinfo_t* ResGetLumpsWad (FILE* handle, UINT16* nlmp, const char* filen
+ 	if (fseek(handle, header.infotableofs, SEEK_SET) == -1
+ 		|| fread(fileinfo, 1, i, handle) < i)
+ 	{
+-		CONS_Alert(CONS_ERROR, M_GetText("Corrupt wadfile directory (%s)\n"), strerror(ferror(handle)));
++		CONS_Alert(CONS_ERROR, M_GetText("Corrupt wadfile directory (%s)\n"), M_FileError(handle));
+ 		free(fileinfov);
+ 		return NULL;
+ 	}
+@@ -414,7 +414,7 @@ static lumpinfo_t* ResGetLumpsWad (FILE* handle, UINT16* nlmp, const char* filen
+ 				handle) < sizeof realsize)
+ 			{
+ 				I_Error("corrupt compressed file: %s; maybe %s", /// \todo Avoid the bailout?
+-					filename, strerror(ferror(handle)));
++					filename, M_FileError(handle));
+ 			}
+ 			realsize = LONG(realsize);
+ 			if (realsize != 0)
+@@ -552,7 +552,7 @@ static lumpinfo_t* ResGetLumpsZip (FILE* handle, UINT16* nlmp)
+ 	fseek(handle, -4, SEEK_CUR);
+ 	if (fread(&zend, 1, sizeof zend, handle) < sizeof zend)
+ 	{
+-		CONS_Alert(CONS_ERROR, "Corrupt central directory (%s)\n", strerror(ferror(handle)));
++		CONS_Alert(CONS_ERROR, "Corrupt central directory (%s)\n", M_FileError(handle));
+ 		return NULL;
+ 	}
+ 	numlumps = zend.entries;
+@@ -569,7 +569,7 @@ static lumpinfo_t* ResGetLumpsZip (FILE* handle, UINT16* nlmp)
+ 
+ 		if (fread(zentry, 1, sizeof(zentry_t), handle) < sizeof(zentry_t))
+ 		{
+-			CONS_Alert(CONS_ERROR, "Failed to read central directory (%s)\n", strerror(ferror(handle)));
++			CONS_Alert(CONS_ERROR, "Failed to read central directory (%s)\n", M_FileError(handle));
+ 			Z_Free(lumpinfo);
+ 			free(zentries);
+ 			return NULL;
+@@ -589,7 +589,7 @@ static lumpinfo_t* ResGetLumpsZip (FILE* handle, UINT16* nlmp)
+ 		fullname = malloc(zentry->namelen + 1);
+ 		if (fgets(fullname, zentry->namelen + 1, handle) != fullname)
+ 		{
+-			CONS_Alert(CONS_ERROR, "Unable to read lumpname (%s)\n", strerror(ferror(handle)));
++			CONS_Alert(CONS_ERROR, "Unable to read lumpname (%s)\n", M_FileError(handle));
+ 			Z_Free(lumpinfo);
+ 			free(zentries);
+ 			free(fullname);
+diff --git a/src/win32/Makefile.cfg b/src/win32/Makefile.cfg
+index 73d236604..cd79a5b0c 100644
+--- a/src/win32/Makefile.cfg
++++ b/src/win32/Makefile.cfg
+@@ -10,12 +10,24 @@ ifdef MINGW64
+ 	HAVE_LIBGME=1
+ 	LIBGME_CFLAGS=-I../libs/gme/include
+ 	LIBGME_LDFLAGS=-L../libs/gme/win64 -lgme
++
++ifdef HAVE_OPENMPT
++	LIBOPENMPT_CFLAGS?=-I../libs/libopenmpt/inc
++	LIBOPENMPT_LDFLAGS?=-L../libs/libopenmpt/lib/x86_64/mingw -lopenmpt
++endif
++
+ 	SDL_CFLAGS?=-I../libs/SDL2/x86_64-w64-mingw32/include/SDL2 -I../libs/SDL2_mixer/x86_64-w64-mingw32/include/SDL2 -Dmain=SDL_main
+ 	SDL_LDFLAGS?=-L../libs/SDL2/x86_64-w64-mingw32/lib -L../libs/SDL2_mixer/x86_64-w64-mingw32/lib -lmingw32 -lSDL2main -lSDL2 -mwindows
+ else
+ 	HAVE_LIBGME=1
+ 	LIBGME_CFLAGS=-I../libs/gme/include
+ 	LIBGME_LDFLAGS=-L../libs/gme/win32 -lgme
++
++ifdef HAVE_OPENMPT
++	LIBOPENMPT_CFLAGS?=-I../libs/libopenmpt/inc
++	LIBOPENMPT_LDFLAGS?=-L../libs/libopenmpt/lib/x86/mingw -lopenmpt
++endif
++
+ 	SDL_CFLAGS?=-I../libs/SDL2/i686-w64-mingw32/include/SDL2 -I../libs/SDL2_mixer/i686-w64-mingw32/include/SDL2 -Dmain=SDL_main
+ 	SDL_LDFLAGS?=-L../libs/SDL2/i686-w64-mingw32/lib -L../libs/SDL2_mixer/i686-w64-mingw32/lib -lmingw32 -lSDL2main -lSDL2 -mwindows
+ endif
+diff --git a/src/win32/win_sys.c b/src/win32/win_sys.c
+index d10f73b58..701958d48 100644
+--- a/src/win32/win_sys.c
++++ b/src/win32/win_sys.c
+@@ -327,7 +327,7 @@ static inline VOID I_GetConsoleEvents(VOID)
+ 							break;
+ 						case VK_RETURN:
+ 							entering_con_command = false;
+-							// Fall through.
++							/* FALLTHRU */
+ 						default:
+ 							ev.data1 = MapVirtualKey(input.Event.KeyEvent.wVirtualKeyCode,2); // convert in to char
+ 					}
+@@ -1354,6 +1354,8 @@ getBufferedData:
+ 	}
+ }
+ 
++void I_UpdateMouseGrab(void) {}
++
+ // ===========================================================================================
+ //                                                                       DIRECT INPUT JOYSTICK
+ // ===========================================================================================
+@@ -3693,3 +3695,4 @@ void I_RegisterSysCommands(void)
+ 	CV_RegisterVar(&cv_cpuaffinity);
+ }
+ #endif
++
+diff --git a/src/y_inter.c b/src/y_inter.c
+index ed4972d2e..1d8918ef1 100644
+--- a/src/y_inter.c
++++ b/src/y_inter.c
+@@ -219,11 +219,14 @@ void Y_IntermissionDrawer(void)
+ 
+ 		// draw score
+ 		ST_DrawPatchFromHud(HUD_SCORE, sboscore);
+-		ST_DrawNumFromHud(HUD_SCORENUM, data.coop.score);
++		if (!splitscreen && (cv_scorepos.value == 1))
++			ST_DrawNumFromHud(HUD_SCORENUMMODERN, data.coop.score);
++		else
++			ST_DrawNumFromHud(HUD_SCORENUM, data.coop.score);
+ 
+ 		// draw time
+ 		ST_DrawPatchFromHud(HUD_TIME, sbotime);
+-		if (cv_timetic.value == 1)
++		if (cv_timetic.value == 3)
+ 			ST_DrawNumFromHud(HUD_SECONDS, data.coop.tics);
+ 		else
+ 		{
+@@ -238,7 +241,7 @@ void Y_IntermissionDrawer(void)
+ 			ST_DrawPadNumFromHud(HUD_SECONDS, seconds, 2); // Seconds
+ 
+ 			// we should show centiseconds on the intermission screen too, if the conditions are right.
+-			if (modeattacking || cv_timetic.value == 2)
++			if (modeattacking || cv_timetic.value == 1 || cv_timetic.value == 2)
+ 			{
+ 				ST_DrawPatchFromHud(HUD_TIMETICCOLON, sboperiod); // Period
+ 				ST_DrawPadNumFromHud(HUD_TICS, tictrn, 2); // Tics
+@@ -1888,3 +1891,4 @@ static void Y_UnloadData(void)
+ 	}
+ 
+ }
++
+diff --git a/src/z_zone.c b/src/z_zone.c
+index a3e13422f..883d0e712 100644
+--- a/src/z_zone.c
++++ b/src/z_zone.c
+@@ -140,14 +140,14 @@ static void Command_Memdump_f(void);
+ 
+ void Z_Init(void)
+ {
+-	UINT32 total, memfree;
++	size_t total, memfree;
+ 
+ 	memset(&head, 0x00, sizeof(head));
+ 
+ 	head.next = head.prev = &head;
+ 
+ 	memfree = I_GetFreeMem(&total)>>20;
+-	CONS_Printf("System memory: %uMB - Free: %uMB\n", total>>20, memfree);
++	CONS_Printf("System memory: %sMB - Free: %sMB\n", sizeu1(total>>20), sizeu2(memfree));
+ 
+ 	// Note: This allocates memory. Watch out.
+ 	COM_AddCommand("memfree", Command_Memfree_f);
+@@ -616,7 +616,7 @@ size_t Z_TagUsage(INT32 tagnum)
+ 
+ void Command_Memfree_f(void)
+ {
+-	UINT32 freebytes, totalbytes;
++	size_t freebytes, totalbytes;
+ 
+ 	Z_CheckHeap(-1);
+ 	CONS_Printf("\x82%s", M_GetText("Memory Info\n"));
+@@ -643,8 +643,8 @@ void Command_Memfree_f(void)
+ 
+ 	CONS_Printf("\x82%s", M_GetText("System Memory Info\n"));
+ 	freebytes = I_GetFreeMem(&totalbytes);
+-	CONS_Printf(M_GetText("    Total physical memory: %7u KB\n"), totalbytes>>10);
+-	CONS_Printf(M_GetText("Available physical memory: %7u KB\n"), freebytes>>10);
++	CONS_Printf(M_GetText("    Total physical memory: %s KB\n"), sizeu1(totalbytes>>10));
++	CONS_Printf(M_GetText("Available physical memory: %s KB\n"), sizeu1(freebytes>>10));
+ }
+ 
+ #ifdef ZDEBUG

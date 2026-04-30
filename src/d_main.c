@@ -139,6 +139,8 @@ boolean advancedemo;
 INT32 debugload = 0;
 #endif
 
+char savegamename[256];
+
 #ifdef _arch_dreamcast
 char srb2home[256] = "/cd";
 char srb2path[256] = "/cd";
@@ -433,12 +435,10 @@ static void D_Display(void)
 	// vid size change is now finished if it was on...
 	vid.recalc = 0;
 
-	// FIXME: draw either console or menu, not the two
-	if (gamestate != GS_TIMEATTACK)
-		CON_Drawer();
-
 	M_Drawer(); // menu is drawn even on top of everything
 	// focus lost moved to M_Drawer
+
+	CON_Drawer();
 
 	//
 	// wipe update
@@ -538,9 +538,14 @@ void D_SRB2Loop(void)
 	// hack to start on a nice clear console screen.
 	COM_ImmedExecute("cls;version");
 
-	if (rendermode == render_soft)
-		V_DrawScaledPatch(0, 0, 0, (patch_t *)W_CacheLumpNum(W_GetNumForName("CONSBACK"), PU_CACHE));
 	I_FinishUpdate(); // page flip or blit buffer
+	/*
+	LMFAO this was showing garbage under OpenGL
+	because I_FinishUpdate was called afterward
+	*/
+	/* Smells like a hack... Don't fade Sonic's ass into the title screen. */
+	if (gamestate != GS_TITLESCREEN)
+		V_DrawScaledPatch(0, 0, 0, W_CachePatchNum(W_GetNumForName("CONSBACK"), PU_CACHE));
 
 	for (;;)
 	{

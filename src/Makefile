@@ -74,6 +74,7 @@
 #     Compile without BSD API, add 'NONET=1'
 #     Compile without IPX/SPX, add 'NOIPX=1'
 #     Compile Mingw/SDL with S_DS3S, add 'DS3D=1'
+#     Compile without libopenmpt, add 'NOOPENMPT=1'
 #     Compile with S_FMOD3D, add 'FMOD=1' (WIP)
 #     Compile with S_OPENAL, add 'OPENAL=1' (WIP)
 #     To link with the whole SDL_Image lib to load Icons, add 'SDL_IMAGE=1' but it isn't not realy needed
@@ -92,10 +93,6 @@ D_FILES=$(D_DIR)/srb2.srb \
 	$(D_DIR)/music.dta \
 
 PKG_CONFIG?=pkg-config
-
-ifdef WIILINUX
-LINUX=1
-endif
 
 ifdef PANDORA
 LINUX=1
@@ -118,12 +115,6 @@ endif #ifdef MINGW64
 
 ifdef HAIKU
 SDL=1
-endif
-
-ifdef NDS
-# Include this before the main Makefile.cfg
-EXENAME?=srb2.elf
-include nds/Makefile.cfg
 endif
 
 include Makefile.cfg
@@ -152,34 +143,18 @@ PNG_CFLAGS?=
 PNG_LDFLAGS?=-lpng
 endif
 
-ifdef WIILINUX
-NONX86=1
-NOTERMIOS=1
-NOHW=1
-CFLAGS+=-DWMINPUT
-NOTERMIOS=1
-NOPOSTPROCESSING=1
-endif
-
 ifdef PANDORA
 NONX86=1
 NOHW=1
 NOHS=1
 endif
 
-ifdef WII
-NONX86=1
-NOHW=1
-NOPOSTPROCESSING=1
-endif
-
-ifdef PS3N
-NONX86=1
-NOHW=1
-endif
-
 ifdef DJGPPDOS
 include djgppdos/Makefile.cfg
+endif
+
+ifndef NOOPENMPT
+HAVE_OPENMPT=1
 endif
 
 ifdef MINGW
@@ -253,7 +228,6 @@ ifndef ECHO
 	MKDIR:=@$(MKDIR)
 	MKISOFS:=@$(MKISOFS)
 	DD:=@$(DD)
-	NDSTOOL:=@$(NDSTOOL)
 	GZIP:=@$(GZIP)
 	MSGFMT:=@$(MSGFMT)
 	UPX:=@$(UPX)
@@ -271,14 +245,12 @@ endif
 ifdef NOHW
 	OPTS+=-DNOHW
 else
-ifndef DC
 	#Hurdler: not really supported and not tested recently
 	#OPTS+=-DUSE_PALETTED_TEXTURE
 endif
 	OPTS+=-DHWRENDER
 	OBJS+=$(OBJDIR)/hw_bsp.o $(OBJDIR)/hw_draw.o $(OBJDIR)/hw_light.o \
 		 $(OBJDIR)/hw_main.o $(OBJDIR)/hw_clip.o $(OBJDIR)/hw_md2.o $(OBJDIR)/hw_cache.o $(OBJDIR)/hw_trick.o
-endif
 
 ifdef NOHS
 	OPTS+=-DNOHS
@@ -291,7 +263,7 @@ OPTS += -DCOMPVERSION
 
 ifndef NONX86
 ifndef GCC29
-	ARCHOPTS?=-march=pentium
+	ARCHOPTS?=-msse3 -mfpmath=sse
 else
 	ARCHOPTS?=-mpentium
 endif
@@ -351,6 +323,17 @@ LIBS+=$(LIBGME_LDFLAGS)
 CFLAGS+=$(LIBGME_CFLAGS)
 endif
 
+ifdef HAVE_OPENMPT
+OPTS+=-DHAVE_OPENMPT
+
+LIBOPENMPT_PKGCONFIG?=libopenmpt
+LIBOPENMPT_CFLAGS?=$(shell $(PKG_CONFIG) $(LIBOPENMPT_PKGCONFIG) --cflags)
+LIBOPENMPT_LDFLAGS?=$(shell $(PKG_CONFIG) $(LIBOPENMPT_PKGCONFIG) --libs)
+
+LIBS+=$(LIBOPENMPT_LDFLAGS)
+CFLAGS+=$(LIBOPENMPT_CFLAGS)
+endif
+
 ifndef NOZLIB
 OPTS+=-DHAVE_ZLIB
 ZLIB_PKGCONFIG?=zlib
@@ -387,14 +370,6 @@ ifdef NOMD5
 	OPTS+=-DNOMD5
 else
 	OBJS:=$(OBJDIR)/md5.o $(OBJS)
-endif
-
-ifdef FAKEDC
-	OPTS+=-DDC
-endif
-
-ifdef FAKEPSP
-	OPTS+=-DPSP
 endif
 
 ifdef NOPOSTPROCESSING
@@ -549,48 +524,18 @@ ifdef DJGPPDOS
 all:	 pre-build $(BIN)/$(EXENAME)
 endif
 
-ifdef XBOX
-all:	 pre-build $(BIN)/$(BINNAME)
-endif
-
-ifdef PS3N
-all:	 pre-build $(BIN)/$(PKGNAME)
-endif
-
-ifdef WII
-all:	pre-build $(BIN)/$(DOLNAME)
-endif
-
 ifdef PANDORA
 all:	pre-build $(BIN)/$(PNDNAME)
 endif
 
-ifdef PSP
-all:	 pre-build $(BIN)/$(BINNAME) post-build
-endif
-
-ifdef DC
-all:	 pre-build $(BIN)/$(BINNAME) post-build
-endif
-
-ifndef DC
-ifndef PSP
-ifndef XBOX
 ifdef MINGW
 ifndef SDL
 all:	 pre-build $(BIN)/$(EXENAME) dll
 endif
 endif
-endif
-endif
 
 ifdef SDL
 all:	 pre-build $(BIN)/$(EXENAME)
-endif
-endif
-
-ifdef NDS
-all:	$(BIN)/$(EXENAME:.elf=.nds)
 endif
 
 ifdef DUMMY
@@ -645,11 +590,9 @@ endif
 
 # mac os x lsdlsrb2 does not like objcopy
 ifndef MACOSX
-ifndef PSP
 	$(OBJCOPY) $(BIN)/$(EXENAME) $(BIN)/$(DBGNAME)
 	$(OBJCOPY) --strip-debug $(BIN)/$(EXENAME)
 	-$(OBJCOPY) --add-gnu-debuglink=$(BIN)/$(DBGNAME) $(BIN)/$(EXENAME)
-endif
 endif
 ifndef NOUPX
 	-$(UPX) $(UPX_OPTS) $(BIN)/$(EXENAME)
@@ -769,16 +712,6 @@ endif
 	$(REMOVE) $(OBJDIR)/depend.ped
 	@echo "Created dependency file, depend.dep"
 
-ifdef DC
-$(OBJDIR)/v_video.o: v_video.c doomdef.h doomtype.h g_state.h m_swap.h r_local.h \
-  tables.h m_fixed.h screen.h command.h m_bbox.h r_main.h d_player.h \
-  p_pspr.h info.h d_think.h sounds.h p_mobj.h doomdata.h d_ticcmd.h \
-  r_data.h r_defs.h r_state.h r_bsp.h r_segs.h r_plane.h r_sky.h \
-  r_things.h r_draw.h v_video.h hu_stuff.h d_event.h w_wad.h console.h \
-  i_video.h z_zone.h doomstat.h d_clisrv.h d_netcmd.h
-	$(CC) $(CFLAGS) -fno-omit-frame-pointer $(WFLAGS) -c $< -o $@
-endif
-
 ifdef VALGRIND
 $(OBJDIR)/z_zone.o: z_zone.c
 	$(CC) $(CFLAGS) $(WFLAGS) -DHAVE_VALGRIND $(VALGRIND_CFLAGS) -c $< -o $@
@@ -819,71 +752,6 @@ $(OBJDIR)/%.o: %.s
 
 $(OBJDIR)/SRB2.res: win32/Srb2win.rc win32/afxres.h win32/resource.h
 	$(WINDRES) -i $< -O rc $(WINDRESFLAGS) --include-dir=win32 -o $@ -O coff
-
-ifdef DC
-$(OBJDIR)/romdisk.img:
-	$(KOS_GENROMFS) -f romdisk.img -d ../data -v
-
-$(OBJDIR)/romdisk.o: romdisk.img
-	$(KOS_BASE)/utils/bin2o/bin2o romdisk.img romdisk romdisk.o
-
-$(OBJDIR)/dchelp.o: $(INTERFACE)/SRB2DC/dchelp.c
-	$(CC) $(CFLAGS) $(WFLAGS) -c $< -o $@
-
-$(OBJDIR)/i_udp.o: $(INTERFACE)/SRB2DC/i_udp.c
-	$(CC) $(CFLAGS) $(WFLAGS) -c $< -o $@
-
-$(BIN)/IP.BIN: $(INTERFACE)/SRB2DC/IP.BIN
-	$(CP) $< $@
-
-$(BIN)/SRB2DC.cdi.pass1: $(INTERFACE)/SRB2DC/SELFBOOT.BIN
-	$(CP) $< $@
-
-$(BIN)/$(BINNAME): $(BIN)/$(EXENAME)
-	$(KOS_OBJCOPY) -R .stack -O binary $< $@
-
-$(BIN)/1ST_READ.BIN: $(BIN)/$(BINNAME) $(BIN)/scramble
-	$(BIN)/scramble $< $@
-
-$(BIN)/scramble: $(INTERFACE)/SRB2DC/scramble.c
-	-$(MKDIR) $(BIN)
-	$(HOSTCC) $< -o $@
-
-iso: $(BIN)/SRB2DC.iso
-cdi: $(BIN)/SRB2DC.cdi
-
-$(BIN)/SRB2DC.iso.pass1: $(BIN)/1ST_READ.BIN $(BIN)/IP.BIN
-	-$(MKDIR) $(BIN)/cdrom
-	$(CP) $(BIN)/1ST_READ.BIN $(D_FILES) $(BIN)/cdrom
-	$(MKISOFS) -l -r -o $@ $(BIN)/cdrom
-
-$(BIN)/SRB2DC.iso.pass2: $(BIN)/SRB2DC.iso.pass1
-	$(DD) if=$< of=$@ bs=2048 skip=16 status=noxfer
-
-$(BIN)/SRB2DC.iso: $(BIN)/SRB2DC.iso.pass2 $(BIN)/IP.BIN
-	@cat $(BIN)/IP.BIN $(BIN)/SRB2DC.iso.pass2 > $@
-
-$(BIN)/SRB2DC.cdi: $(BIN)/SRB2DC.iso.pass2 $(BIN)/SRB2DC.cdi.pass1 $(BIN)/IP.BIN
-	@cat $(BIN)/SRB2DC.cdi.pass1 $(BIN)/IP.BIN $(BIN)/SRB2DC.iso.pass2 > $@
-
-post-build: $(BIN)/1ST_READ.BIN
-endif
-
-ifdef XBOX
-$(OBJDIR)/xboxhelp.o: $(INTERFACE)/SRB2XBOX/xboxhelp.c
-		$(CC) $(CFLAGS) $(WFLAGS) -c $< -o $@
-
-$(BIN)/$(BINNAME): $(BIN)/$(EXENAME)
-	$(CXBE) -OUT:"$@" -DUMPINFO:"$(BIN)/SRB2XBOX.cxbe"  -TITLE:"Sonic Robo Blast 2" $<
-endif
-
-ifdef NDS
-$(BIN)/$(EXENAME:.elf=.nds): $(BIN)/$(EXENAME:.elf=.arm9)
-	$(NDSTOOL) -c $@ -9 $(BIN)/$(EXENAME:.elf=.arm9)
-
-%.arm9: %.elf
-	$(OBJCOPY) -O binary $< $@
-endif
 
 ifdef MINGW
 ifndef SDL

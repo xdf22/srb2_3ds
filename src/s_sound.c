@@ -59,6 +59,8 @@ static void GameMIDIMusic_OnChange(void);
 static void GameSounds_OnChange(void);
 static void GameDigiMusic_OnChange(void);
 
+static void ModFilter_OnChange(void);
+
 // commands for music and sound servers
 #ifdef MUSSERV
 consvar_t musserver_cmd = {"musserver_cmd", "musserver", CV_SAVE, NULL, NULL, 0, NULL, NULL, 0, 0, NULL};
@@ -107,6 +109,16 @@ consvar_t cv_resetmusic = {"resetmusic", "No", CV_SAVE, CV_YesNo, NULL, 0, NULL,
 consvar_t cv_gamedigimusic = {"digimusic", "On", CV_SAVE|CV_CALL|CV_NOINIT, CV_OnOff, GameDigiMusic_OnChange, 0, NULL, NULL, 0, 0, NULL};
 consvar_t cv_gamemidimusic = {"midimusic", "On", CV_SAVE|CV_CALL|CV_NOINIT, CV_OnOff, GameMIDIMusic_OnChange, 0, NULL, NULL, 0, 0, NULL};
 consvar_t cv_gamesounds = {"sounds", "On", CV_SAVE|CV_CALL|CV_NOINIT, CV_OnOff, GameSounds_OnChange, 0, NULL, NULL, 0, 0, NULL};
+
+// Window focus sound sytem toggles
+consvar_t cv_playmusicifunfocused = {"playmusicifunfocused", "No", CV_SAVE, CV_YesNo};
+consvar_t cv_playsoundsifunfocused = {"playsoundsifunfocused", "No", CV_SAVE, CV_YesNo};
+
+#ifdef HAVE_OPENMPT
+openmpt_module *openmpt_mhandle = NULL;
+static CV_PossibleValue_t interpolationfilter_cons_t[] = {{0, "Default"}, {1, "None"}, {2, "Linear"}, {4, "Cubic"}, {8, "Windowed sinc"}, {0, NULL}};
+consvar_t cv_modfilter = {"modfilter", "0", CV_SAVE|CV_CALL, interpolationfilter_cons_t, ModFilter_OnChange, 0, NULL, NULL, 0, 0, NULL};
+#endif
 
 #define S_MAX_VOLUME 127
 
@@ -262,13 +274,17 @@ void S_RegisterSoundStuff(void)
 	CV_RegisterVar(&surround);
 	CV_RegisterVar(&cv_samplerate);
 	CV_RegisterVar(&cv_resetmusic);
+	CV_RegisterVar(&cv_playsoundsifunfocused);
+	CV_RegisterVar(&cv_playmusicifunfocused);
 	CV_RegisterVar(&cv_gamesounds);
 	CV_RegisterVar(&cv_gamedigimusic);
 	CV_RegisterVar(&cv_gamemidimusic);
+#ifdef HAVE_OPENMPT
+	CV_RegisterVar(&cv_modfilter);
+#endif
 
 	COM_AddCommand("tunes", Command_Tunes_f);
 	COM_AddCommand("restartaudio", Command_RestartAudio_f);
-
 
 #if defined (macintosh) && !defined (HAVE_SDL) // mp3 playlist stuff
 	{
@@ -346,6 +362,18 @@ lumpnum_t S_GetSfxLumpNum(sfxinfo_t *sfx)
 		return sfxlump;
 
 	return W_GetNumForName("dsthok");
+}
+
+//
+// Sound Status
+//
+
+boolean S_SoundDisabled(void)
+{
+	return (
+			sound_disabled ||
+			( window_notinfocus && ! cv_playsoundsifunfocused.value )
+	);
 }
 
 // Stop all sounds, load level info, THEN start sounds.
@@ -426,7 +454,7 @@ void S_StartSoundAtVolume(const void *origin_p, sfxenum_t sfx_id, INT32 volume)
 	mobj_t *listenmobj = players[displayplayer].mo;
 	mobj_t *listenmobj2 = NULL;
 
-	if (sound_disabled || !sound_started)
+	if (S_SoundDisabled() || !sound_started)
 		return;
 
 	// Don't want a sound? Okay then...
@@ -610,7 +638,7 @@ dontplay:
 
 void S_StartSound(const void *origin, sfxenum_t sfx_id)
 {
-	if (sound_disabled)
+	if (S_SoundDisabled())
 		return;
 
 	if (mariomode) // Sounds change in Mario mode!
@@ -1280,6 +1308,12 @@ boolean S_MusicPaused(void)
 	return I_SongPaused();
 }
 
+boolean S_MusicNotInFocus(void)
+{
+	return (
+			( window_notinfocus && ! cv_playmusicifunfocused.value )
+	);
+}
 musictype_t S_MusicType(void)
 {
 	return I_SongType();
@@ -1434,6 +1468,10 @@ static boolean S_PlayMusic(boolean looping, UINT32 fadeinms)
 	}
 
 	S_InitMusicVolume(); // switch between digi and sequence volume
+
+	if (S_MusicNotInFocus())
+		S_PauseAudio();
+
 	return true;
 }
 
@@ -1561,6 +1599,9 @@ void S_PauseAudio(void)
 
 void S_ResumeAudio(void)
 {
+	if (S_MusicNotInFocus())
+		return;
+
 	if (I_SongPlaying() && I_SongPaused())
 		I_ResumeSong();
 
@@ -1844,3 +1885,11 @@ void GameMIDIMusic_OnChange(void)
 		}
 	}
 }
+
+#ifdef HAVE_OPENMPT
+void ModFilter_OnChange(void)
+{
+	if (openmpt_mhandle)
+		openmpt_module_set_render_param(openmpt_mhandle, OPENMPT_MODULE_RENDER_INTERPOLATIONFILTER_LENGTH, cv_modfilter.value);
+}
+#endif
